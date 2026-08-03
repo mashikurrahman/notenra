@@ -1,0 +1,170 @@
+# Codemagic CI for the Notenra iOS app.
+#
+# The app logic (recording, the long-recording session-timeout fix, offline
+# re-upload recovery, consent, notifications, clinician-only login, etc.) all
+# lives in shared Dart under lib/, so BOTH workflows below automatically build
+# whatever is on `main` — no iOS-specific edits are needed to pick up an Android
+# change. The app version always comes from pubspec.yaml (1.0.0+1 as of
+# 2026-08-03) — never hard-code it here.
+#
+# iOS-native pieces that support those features already live in the Xcode
+# project (Info.plist mic/Face ID/background-audio/ATS + export-compliance,
+# AppDelegate notification delegate) — Codemagic just compiles them.
+
+workflows:
+  # ---------------------------------------------------------------------------
+  # Unsigned iOS Simulator build (for Appetize / quick preview). No Apple
+  # Developer account or signing needed. Auto-builds on every push to main so
+  # the iOS artifact tracks the same code as the Android release.
+  # ---------------------------------------------------------------------------
+  ios-simulator-appetize:
+    name: iOS Simulator build for Appetize
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: main
+          include: true
+          source: true
+    environment:
+      flutter: 3.44.2
+      xcode: latest
+      cocoapods: default
+    scripts:
+      - name: Flutter pub get
+        script: flutter packages pub get
+
+      # Fail fast on a red suite: a broken unit test should stop the build
+      # here rather than ship a preview artifact that misbehaves on Appetize.
+      - name: Analyze and test
+        script: |
+          set -e
+          flutter analyze
+          flutter test
+
+      # Build an UNSIGNED iOS Simulator .app. Appetize runs iOS inside a
+      # simulator, so a simulator build needs no Apple Developer account and
+      # no code signing — the easiest path to a testable artifact.
+      - name: Build iOS Simulator app
+        script: |
+          flutter build ios --simulator --debug --no-codesign
+
+      # Appetize accepts a .zip (or .tar.gz) that contains the .app bundle.
+      # Zip the bundle itself (not its parent folder) so the .app is at the
+      # archive root, which is what Appetize expects.
+      - name: Zip the .app bundle for Appetize
+        script: |
+          cd build/ios/iphonesimulator
+          zip -r -y "$CM_BUILD_DIR/Runner-simulator.app.zip" Runner.app
+          echo "Artifact ready: Runner-simulator.app.zip"
+    artifacts:
+      - Runner-simulator.app.zip
+    publishing:
+      email:
+        recipients:
+          - atiqurrahmanaline@gmail.com
+        notify:
+          success: true
+          failure: true
+
+  # ---------------------------------------------------------------------------
+  # Signed App Store / TestFlight build. Manual trigger only (start it from the
+  # Codemagic UI when you want to ship). Before the first run you must:
+  #   1. Connect an App Store Connect API key in Codemagic (Team settings →
+  #      Integrations → App Store Connect) and put its NAME below in
+  #      `integrations.app_store_connect`.
+  #   2. Put your app's numeric Apple ID (App Store Connect → App Information)
+  #      in APP_STORE_APPLE_ID below.
+  # Codemagic then fetches/creates the distribution certificate + provisioning
+  # profile automatically from that API key — no manual certs needed.
+  # ---------------------------------------------------------------------------
+  ios-release:
+    name: iOS App Store / TestFlight
+    instance_type: mac_mini_m2
+    max_build_duration: 90
+    integrations:
+      app_store_connect: CODEMAGIC_ASC_KEY_NAME   # ← REPLACE with your Codemagic integration name
+    environment:
+      flutter: 3.44.2
+      xcode: latest
+      cocoapods: default
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.notenra.notenra
+      vars:
+        APP_STORE_APPLE_ID: 0000000000            # ← REPLACE with your app's numeric Apple ID
+    scripts:
+      - name: Get Flutter packages
+        script: flutter packages pub get
+
+      # Never ship a build whose tests are red.
+      - name: Analyze and test
+        script: |
+          set -e
+          flutter analyze
+          flutter test
+
+      # This project resolves its iOS plugins through Swift Package Manager
+      # (ios/Flutter/ephemeral/Packages/FlutterGeneratedPluginSwiftPackage), so
+      # there is no committed Podfile and nothing to `pod install`. Kept as a
+      # guarded step because `flutter build ipa` will generate a Podfile if a
+      # future plugin has no SPM support — in that case this installs it.
+      - name: Install CocoaPods (only if a Podfile exists)
+        script: |
+          if [ -f ios/Podfile ]; then
+            echo "Podfile found — installing pods."
+            (cd ios && pod install)
+          else
+            echo "No Podfile — plugins resolve via Swift Package Manager. Skipping."
+          fi
+
+      - name: Apply signing profiles to the Xcode project
+        script: xcode-project use-profiles
+      - name: Build signed release IPA
+        script: |
+          set -e
+          # A still-unreplaced Apple ID used to fail silently: the lookup below
+          # errored, `|| echo 0` swallowed it, and EVERY build came out as
+          # build number 1 — so the first upload succeeded and every later one
+          # was rejected for a duplicate CFBundleVersion, with a green log.
+          # Catch it here instead.
+          if [ "$APP_STORE_APPLE_ID" = "0000000000" ] || [ -z "$APP_STORE_APPLE_ID" ]; then
+            echo "APP_STORE_APPLE_ID is still the placeholder."
+            echo "Set it to your app's numeric Apple ID (App Store Connect -> App Information)."
+            exit 1
+          fi
+          # Give every upload a unique, incrementing build number — App Store
+          # Connect rejects a duplicate CFBundleVersion, so we can't just reuse
+          # pubspec's build number on a second upload. The version NAME
+          # (CFBundleShortVersionString, e.g. 1.0.0) still comes from pubspec.
+          # An empty result is legitimate on the very first upload (no builds
+          # yet), so that case starts at 1 rather than failing.
+          LATEST=$(app-store-connect get-latest-testflight-build-number "$APP_STORE_APPLE_ID" 2>/dev/null || echo "")
+          if [ -z "$LATEST" ]; then
+            echo "No existing TestFlight build found — starting at build number 1."
+            LATEST=0
+          fi
+          NEXT=$(( LATEST + 1 ))
+          echo "Building IPA — version from pubspec, build number $NEXT (latest on TestFlight: $LATEST)"
+          # DEMO_ACCOUNTS=false is REQUIRED for anything that reaches real
+          # users: without it the encrypted DB is seeded with built-in demo
+          # logins and fake patient rows (see lib/app_config.dart).
+          flutter build ipa --release \
+            --dart-define=DEMO_ACCOUNTS=false \
+            --build-number=$NEXT \
+            --export-options-plist=/Users/builder/export_options.plist
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+    publishing:
+      email:
+        recipients:
+          - atiqurrahmanaline@gmail.com
+        notify:
+          success: true
+          failure: true
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true                # uploads to TestFlight after a successful build

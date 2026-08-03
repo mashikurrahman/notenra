@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Notenra — Privacy Policy</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+         max-width: 820px; margin: 0 auto; padding: 32px 20px; color: #1c2434; line-height: 1.6; }
+  h1 { color: #12203f; font-size: 28px; margin-bottom: 4px; }
+  h2 { color: #2b3a67; font-size: 20px; margin-top: 32px; border-bottom: 1px solid #e3e8f0; padding-bottom: 6px; }
+  h3 { color: #2b3a67; font-size: 16px; margin-top: 20px; }
+  .meta { color: #6b7488; font-size: 14px; margin-bottom: 24px; }
+  code { background: #f2f4f8; padding: 1px 5px; border-radius: 4px; font-size: 90%; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 14px; }
+  th, td { border: 1px solid #dce1ea; padding: 8px 10px; text-align: left; vertical-align: top; }
+  th { background: #f7f9fc; }
+  ul { margin-top: 6px; }
+</style>
+</head>
+<body>
+
+<h1>Privacy Policy — Notenra</h1>
+<p class="meta">
+  Effective date: <strong>July 6, 2026</strong><br>
+  Last updated: <strong>July 6, 2026</strong>
+</p>
+
+<h2>1. Who we are</h2>
+<p>
+  Notenra (the "App") is a clinical documentation companion operated by
+  <strong>Anot Health</strong> ("we", "us", "our"). The App is provided
+  exclusively to licensed clinicians and authorized clinical staff of healthcare
+  organizations that have entered into an agreement with us. It is <strong>not</strong> a
+  consumer product and is not available for public sign-up.
+</p>
+<p>
+  In the course of providing the App, we act as a <strong>service provider / business associate</strong> to
+  the healthcare organizations ("Covered Entities") that use it. Protected Health Information (PHI)
+  processed through the App is owned and controlled by those organizations. Our handling of PHI is
+  governed by a Business Associate Agreement (BAA) with each organization.
+</p>
+
+<h2>2. Scope</h2>
+<p>
+  This policy explains what information the App collects, how it is used, stored, and protected, and
+  the choices available to users. It applies to the Notenra mobile application for Android and iOS.
+</p>
+
+<h2>3. Information we collect</h2>
+
+<h3>3.1 Clinician account information</h3>
+<ul>
+  <li>Email address / username used to sign in</li>
+  <li>Display name and professional role (clinician)</li>
+  <li>Authentication credentials (passwords are never stored in plain text — they are verified against the server and, where cached, stored as a salted hash)</li>
+  <li>On-device biometric authentication (fingerprint/face) — this is processed entirely by the device operating system; <strong>biometric data never leaves the device and is never transmitted to us</strong></li>
+</ul>
+
+<h3>3.2 Patient / clinical information (PHI)</h3>
+<p>Entered by the clinician or synced from the healthcare organization's system:</p>
+<ul>
+  <li>Patient name and medical record number (MRN)</li>
+  <li>Age, date of birth, and gender</li>
+  <li>Medical history and clinical notes</li>
+  <li>Visit type, visit date, and care priority</li>
+  <li>Emergency contact name and phone number</li>
+  <li><strong>Audio recordings of clinical visits</strong>, captured with consent, for the purpose of generating clinical documentation</li>
+</ul>
+
+<h3>3.3 Operational / security information</h3>
+<ul>
+  <li>An audit log of security-relevant actions within the App (e.g., sign-in, recording created, record accessed), including the acting clinician, timestamp, and the affected patient record identifier</li>
+  <li>Upload status of recordings (pending / uploaded / failed) to support reliable, offline-tolerant syncing</li>
+</ul>
+
+<h3>3.4 What we do NOT collect</h3>
+<ul>
+  <li>No advertising identifiers and no advertising</li>
+  <li>No third-party analytics or tracking SDKs</li>
+  <li>No location data</li>
+  <li>No contacts, photos, or files beyond the audio the clinician records in-app</li>
+  <li>No data collected from or about patients as app "users" — patients are not users of the App</li>
+</ul>
+
+<h2>4. Microphone and permissions</h2>
+<p>The App requests the following device permissions, each for a specific purpose:</p>
+<table>
+  <tr><th>Permission</th><th>Why it is used</th></tr>
+  <tr><td>Microphone</td><td>To record clinical visit audio, only after the clinician starts a recording and patient consent is confirmed. A foreground service keeps the recording reliable if the screen locks; recording never starts on its own.</td></tr>
+  <tr><td>Biometric</td><td>To unlock the app's secure vault using the device's fingerprint/face. Handled by the OS; no biometric data is transmitted.</td></tr>
+  <tr><td>Notifications</td><td>To show status messages (e.g., "recording uploaded", "a note is ready"). Notifications contain no patient-identifying information.</td></tr>
+  <tr><td>Internet / network state</td><td>To securely sync recordings and clinical data with the backend and to detect connectivity for offline-tolerant uploads.</td></tr>
+</table>
+
+<h2>5. How we use information</h2>
+<ul>
+  <li>To authenticate clinicians and enforce clinician-only access</li>
+  <li>To record clinical visits and generate clinical documentation for the treating clinician</li>
+  <li>To sync clinical data securely with the healthcare organization's backend</li>
+  <li>To maintain a security audit trail as required for healthcare compliance</li>
+  <li>To provide app functionality such as offline recording and reliable upload</li>
+</ul>
+<p>We do <strong>not</strong> sell personal or health information, and we do <strong>not</strong> use it for advertising or profiling.</p>
+
+<h2>6. How information is shared</h2>
+<p>
+  Information is transmitted only to the healthcare organization's secure Notenra backend for
+  processing (secure storage and generation of clinical documentation). We do not share personal or
+  health information with any third party for that party's own purposes. We may disclose information
+  only: (a) to the Covered Entity that owns the data; (b) to service providers acting under a Business
+  Associate Agreement solely to operate the service; or (c) where required by law.
+</p>
+
+<h2>7. Data security</h2>
+<ul>
+  <li><strong>Encryption in transit:</strong> all network communication uses TLS/HTTPS. Cleartext traffic is disabled.</li>
+  <li><strong>Encryption at rest:</strong> the on-device database is encrypted (SQLCipher) and audio files are encrypted with AES-GCM in a secured vault. Encryption keys are held in the device's hardware-backed secure storage / keystore.</li>
+  <li><strong>Access controls:</strong> clinician-only sign-in, biometric-gated vault, and automatic sign-out after a period of inactivity.</li>
+  <li><strong>Screen protection:</strong> the App marks its windows as secure to prevent screenshots and screen recording of PHI.</li>
+  <li><strong>No device backups of PHI:</strong> app data is excluded from OS cloud backups.</li>
+  <li><strong>Data minimization:</strong> recordings are purged from the device after a limited retention window once uploaded.</li>
+</ul>
+
+<h2>8. Data retention and deletion</h2>
+<p>
+  Clinical data and recordings are retained on the device only as long as needed to complete their
+  purpose (for example, recordings are removed from the device after they are uploaded and beyond a
+  short retention window). Server-side retention is governed by the healthcare organization's policies
+  and our agreement with them. Because the healthcare organization is the owner of the PHI, requests
+  to access, correct, or delete patient records should be directed to that organization. Clinicians
+  may request deletion of their own account information by contacting us at the address below.
+</p>
+
+<h2>9. Children</h2>
+<p>
+  The App is intended for use by professional clinicians. It is not directed to children and is not
+  available for public download and sign-up. Any patient information (which may relate to patients of
+  any age) is processed on behalf of, and under the control of, the healthcare organization.
+</p>
+
+<h2>10. Your choices</h2>
+<ul>
+  <li>Clinicians control when recording starts and stops, and patient consent is confirmed before recording.</li>
+  <li>Device permissions (microphone, notifications, biometric) can be managed in the device's system settings.</li>
+  <li>Signing out securely purges in-memory patient data from the App.</li>
+</ul>
+
+<h2>11. Changes to this policy</h2>
+<p>
+  We may update this policy from time to time. Material changes will be reflected by updating the
+  "Last updated" date above and, where appropriate, through notice within the App or to the
+  healthcare organization.
+</p>
+
+<h2>12. Contact us</h2>
+<p>
+  <strong>Anot Health</strong><br>
+  Privacy inquiries: <a href="mailto:info@anot.health">info@anot.health</a>
+</p>
+
+</body>
+</html>
