@@ -57,8 +57,11 @@ class SyncEngine {
 
   /// Notified after the operation of [type] on [visitId] is applied
   /// server-side, so the service layer can refresh that visit (and, for an
-  /// upload, tell the clinician it reached the scribe).
-  void Function(String visitId, SyncOpType type)? onOpApplied;
+  /// upload, tell the clinician it reached the scribe). [payload] carries the
+  /// op's data — notably `audioPath`, so the caller can mark exactly which
+  /// local recording the server has now accepted.
+  void Function(String visitId, SyncOpType type, Map<String, dynamic> payload)?
+      onOpApplied;
 
   /// Notified when an op is permanently given up on (4xx or out of retries), so
   /// the service layer can surface the failure (e.g. mark the visit failed)
@@ -78,6 +81,12 @@ class SyncEngine {
 
   /// Pending operation count (surfaced in the UI as a sync badge).
   final ValueNotifier<int> pending = ValueNotifier<int>(0);
+
+  /// True while an audio upload for [audioPath] is still waiting in the queue.
+  /// Lets a recovery scan tell "never uploaded" apart from "already queued",
+  /// so it can't enqueue a second copy of a file that is about to go up.
+  bool hasPendingUpload(String audioPath) => _queue.any((o) =>
+      o.type == SyncOpType.uploadAudio && o.payload['audioPath'] == audioPath);
 
   SyncEngine({required this.backend, required this.connectivity});
 
@@ -122,7 +131,7 @@ class SyncEngine {
           _queue.removeAt(0);
           await _persist();
           AppLog.log('SYNC', 'op ${op.type.name} visit=${op.visitId} OK');
-          onOpApplied?.call(op.visitId, op.type);
+          onOpApplied?.call(op.visitId, op.type, op.payload);
         } catch (e) {
           op.attempts++;
           AppLog.log('SYNC',

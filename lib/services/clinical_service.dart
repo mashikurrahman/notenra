@@ -42,6 +42,16 @@ class ClinicalService extends ChangeNotifier {
   ValueListenable<bool> get online => connectivity.online;
   ValueListenable<int> get pendingSync => _sync.pending;
 
+  /// Fired with the local audio path once the server has definitively accepted
+  /// that recording, whether it went up inline or later via the outbox. The
+  /// owner of the on-device recording row listens so it can mark the row
+  /// uploaded exactly once.
+  void Function(String audioPath)? onAudioUploaded;
+
+  /// True while [audioPath] is still queued for upload. A recovery scan must
+  /// not re-submit a file that is already waiting its turn in the outbox.
+  bool isUploadQueued(String audioPath) => _sync.hasPendingUpload(audioPath);
+
   bool _loading = false;
   bool get loading => _loading;
 
@@ -111,12 +121,18 @@ class ClinicalService extends ChangeNotifier {
     _sync = SyncEngine(backend: _backend, connectivity: connectivity);
     // Coalesce post-upload refreshes: many ops finishing together trigger ONE
     // list fetch, not one full GET /visits per visit (which rate-limits us).
-    _sync.onOpApplied = (_, type) {
+    _sync.onOpApplied = (_, type, payload) {
       _scheduleRefresh();
       // A queued recording reached the scribe — tell the clinician (generic,
       // PHI-free). Fires for both live and offline-then-reconnected uploads.
       if (type == SyncOpType.uploadAudio) {
         NotificationService.instance.recordingUploaded();
+        // Tell the owner of the local recording row that the server now has
+        // this file, so it is never re-sent. Previously only an *inline*
+        // upload could mark it, so anything that drained via the outbox stayed
+        // "pending" and was re-uploaded on every later sign-in.
+        final path = payload['audioPath'] as String?;
+        if (path != null && path.isNotEmpty) onAudioUploaded?.call(path);
       }
     };
     // When the outbox creates the real server visit for an offline recording,

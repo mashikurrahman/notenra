@@ -14,6 +14,7 @@ import 'secure_store.dart';
 
 import 'api/api_client.dart';
 import 'api/auth_api.dart';
+import 'api/clinical_models.dart' show VisitStatus;
 import 'api/patients_api.dart';
 import 'api/token_store.dart';
 import 'audio_vault.dart';
@@ -65,6 +66,11 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
       _authApi = AuthApi(client, tokens);
       _patientsApi = PatientsApi(client);
     }
+    // The server may accept a recording long after submitRecording() returned
+    // (the outbox drains in the background, or after a reconnect). Mark the
+    // local row uploaded whenever that happens, so the recovery scan below
+    // never re-sends a file the server already has.
+    clinical?.onAudioUploaded = (path) => markRecordingUploaded(path);
     WidgetsBinding.instance.addObserver(this);
     _loadConfig();
   }
@@ -1203,6 +1209,16 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
     return saved;
   }
 
+  /// Statuses that can only be reached once the server actually holds the
+  /// audio. `pendingUpload`/`recording` mean it hasn't landed yet; `failed`
+  /// means it never will, and must stay re-sendable.
+  static bool _serverHasAudio(VisitStatus s) =>
+      s == VisitStatus.withScribe ||
+      s == VisitStatus.readyForReview ||
+      s == VisitStatus.changesRequested ||
+      s == VisitStatus.approved ||
+      s == VisitStatus.syncedToEhr;
+
   /// Background finalize for a saved recording: encrypt it at rest, repoint the
   /// stored path to the `.enc` file, then hand it to the scribe (offline-safe
   /// outbox). Runs off the UI path so stopping a long recording never blocks.
@@ -1225,7 +1241,13 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
         durationMs: rec.durationMs,
         existingVisitId: openVisitFor(patientId),
       );
-      if (visit != null && visit.status.name == 'withScribe') {
+      // Mark uploaded for ANY status that means the server has the audio — not
+      // just 'withScribe'. If the scribe had already submitted a note the
+      // status comes back readyForReview/approved, and the old exact-match
+      // check left the row 'pending', so every later sign-in re-uploaded the
+      // same file and the visit grew a duplicate audio card each time.
+      // (A still-queued upload is marked later via onAudioUploaded.)
+      if (visit != null && _serverHasAudio(visit.status)) {
         await markRecordingUploaded(finalPath);
       }
     } catch (_) {/* outbox retries the upload; audio is safe on disk */}
@@ -1325,6 +1347,11 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
         // only re-send rows already secured at rest whose upload was interrupted.
         if (!AudioVault.isEncrypted(r.audioFilePath)) continue;
         if (!await File(r.audioFilePath).exists()) continue;
+        // Already waiting its turn in the outbox — re-submitting here would
+        // put a SECOND copy of the same file in the queue, and the server
+        // appends rather than replaces, so the visit would show duplicate
+        // audio cards. Leave it to the queue that already owns it.
+        if (_clinical?.isUploadQueued(r.audioFilePath) ?? false) continue;
         await _finalizeRecording(r);
       }
     } catch (_) {/* best-effort; the outbox also retries when possible */}
