@@ -52,6 +52,11 @@ class ClinicalService extends ChangeNotifier {
   /// not re-submit a file that is already waiting its turn in the outbox.
   bool isUploadQueued(String audioPath) => _sync.hasPendingUpload(audioPath);
 
+  /// Drives the outbox immediately, so a test can exercise a retry without
+  /// waiting out the (up to 5 minute) backoff timer.
+  @visibleForTesting
+  Future<void> flushOutboxForTest() => _sync.flush();
+
   bool _loading = false;
   bool get loading => _loading;
 

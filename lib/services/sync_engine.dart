@@ -184,6 +184,37 @@ class SyncEngine {
           }
           targetId = real;
         }
+        // An upload can reach the server even when the CLIENT sees a failure —
+        // a receive timeout on a long recording, or a 2xx whose body we
+        // couldn't confirm. Retrying blindly then appends a SECOND copy,
+        // because the server stores audio as a comma-separated list and never
+        // replaces. So record how many recordings the visit had before the
+        // first attempt, and on any retry check whether it has grown: if it
+        // has, the earlier attempt landed and this op is already done.
+        final baseline = (op.payload['baselineCount'] as num?)?.toInt();
+        if (op.attempts == 0 && baseline == null) {
+          try {
+            final before = await backend.getVisit(targetId);
+            op.payload['baselineCount'] = before.recordingCount;
+            await _persist();
+          } catch (_) {
+            // No baseline — fall through and upload. A duplicate is
+            // recoverable; a lost recording is not.
+          }
+        } else if (baseline != null) {
+          try {
+            final current = await backend.getVisit(targetId);
+            if (current.recordingCount > baseline) {
+              AppLog.log(
+                  'SYNC',
+                  'upload already landed visit=$targetId '
+                      '(${current.recordingCount} > $baseline) — not re-sending');
+              return;
+            }
+          } catch (_) {
+            // Can't verify — retry rather than risk losing the recording.
+          }
+        }
         AppLog.log('SYNC', 'apply uploadAudio visit=$targetId');
         await backend.uploadAudio(
             visitId: targetId, audioPath: op.payload['audioPath'] as String);
