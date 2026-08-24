@@ -1,6 +1,9 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../api/api_config.dart';
+import '../api/client_identity.dart';
 import '../app_state.dart';
 import '../logo.dart';
 import '../services/clinical_service.dart';
@@ -14,6 +17,12 @@ import '../widgets/nx.dart';
 /// on the gradient the way they do on Today — so the body is purely the
 /// security posture and the sign-out. Settings live in the web app; there is
 /// deliberately no Settings anywhere in this app.
+///
+/// The server address is shown but not editable: support needs to be able to ask
+/// "which server is this device on?", while a clinician-editable server field
+/// would let PHI uploads be redirected to an arbitrary host. Changing it is a
+/// build-time concern (`--dart-define=API_BASE_URL=…`); a debug-only override
+/// hides behind a long-press on the version for QA against staging.
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
 
@@ -45,6 +54,7 @@ class ProfileScreen extends StatelessWidget {
                 const SizedBox(height: Nx.s3),
                 _section('Security', Icons.shield_outlined, [
                   _row('Account role', user?.role ?? 'clinician'),
+                  _row('Server', ApiConfig.displayHost),
                   _row('Biometric vault', 'Enabled', good: true),
                   _row('Auto-logoff',
                       '${AppState.inactivityTimeout.inMinutes} min inactivity'),
@@ -78,10 +88,18 @@ class ProfileScreen extends StatelessWidget {
                         child: const NotenraLogo(height: 22),
                       ),
                       const SizedBox(height: Nx.s2),
-                      Text('Version 1.0.0',
-                          style: Nx.sectionLabel.copyWith(
-                              fontSize: 10,
-                              color: Nx.muted.withValues(alpha: 0.7))),
+                      GestureDetector(
+                        // Debug builds only — see the class doc.
+                        onLongPress: kDebugMode
+                            ? () => _promptServerOverride(context)
+                            : null,
+                        child: Text(
+                            'Version ${ClientIdentity.appVersion}'
+                            '${ApiConfig.isOverridden ? ' • custom server' : ''}',
+                            style: Nx.sectionLabel.copyWith(
+                                fontSize: 10,
+                                color: Nx.muted.withValues(alpha: 0.7))),
+                      ),
                     ],
                   ),
                 ),
@@ -91,6 +109,64 @@ class ProfileScreen extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  /// Debug/QA affordance: repoint the app at another backend without a rebuild.
+  ///
+  /// Guarded by [kDebugMode] at the call site so it cannot exist in a release
+  /// build. Signs out afterwards — the stored session token belongs to the old
+  /// server and would be rejected by the new one, which would otherwise look
+  /// like a broken server rather than a stale session.
+  Future<void> _promptServerOverride(BuildContext context) async {
+    final controller = TextEditingController(text: ApiConfig.baseUrl);
+    final applied = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Server (debug)'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: controller,
+              autofocus: true,
+              keyboardType: TextInputType.url,
+              decoration: const InputDecoration(
+                labelText: 'Base URL',
+                hintText: 'https://host/api',
+              ),
+            ),
+            const SizedBox(height: Nx.s3),
+            Text('Built-in: ${ApiConfig.defaultBaseUrl}',
+                style: const TextStyle(fontSize: 11, color: Nx.muted)),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              await ApiConfig.clearOverride();
+              if (ctx.mounted) Navigator.of(ctx).pop(true);
+            },
+            child: const Text('Reset'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () async {
+              await ApiConfig.setBaseUrl(controller.text);
+              if (ctx.mounted) Navigator.of(ctx).pop(true);
+            },
+            child: const Text('Apply'),
+          ),
+        ],
+      ),
+    );
+    if (applied != true || !context.mounted) return;
+    context.read<ClinicalService>().clearForLogout();
+    context.read<AppState>().logout();
+    Navigator.of(context).popUntil((r) => r.isFirst);
   }
 
   /// Identity block on the gradient: monogram, name, sign-in address, role.

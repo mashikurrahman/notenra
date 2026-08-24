@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 
 import '../app_log.dart';
 import 'api_config.dart';
+import 'client_identity.dart';
 import 'token_store.dart';
 
 /// A failed API call, with a human-readable [message] the UI can show directly.
@@ -41,14 +42,24 @@ class ApiClient {
   String? _csrfToken;
   String _csrfCookieName = '__Host-csrf_token';
 
-  // The server now also issues the session JWT as an httpOnly cookie
-  // (`__Host-anot_session` in prod, `anot_session` in dev) instead of in the
-  // response body. It still accepts a Bearer token, so we extract the JWT from
-  // the cookie and keep using Bearer.
-  static final RegExp _sessionCookieRe = RegExp(r'anot_session=([^;]+)');
+  // The server issues the session JWT as an httpOnly cookie (`__Host-`-prefixed
+  // in prod, bare in dev) as well as, on some routes, in the response body. It
+  // still accepts a Bearer token, so we extract the JWT from the cookie and keep
+  // using Bearer.
+  //
+  // The cookie NAME is server-specific, so it is a build-time define alongside
+  // `API_BASE_URL` — pointing the app at a backend that names its session cookie
+  // something else would otherwise mean login falls back to the body token (and
+  // fails outright if there isn't one), and any mid-session cookie rotation
+  // would be missed, expiring the session during a visit.
+  static const sessionCookieName =
+      String.fromEnvironment('SESSION_COOKIE_NAME', defaultValue: 'anot_session');
+
+  static final RegExp _sessionCookieRe = RegExp(
+      '(?:__Host-|__Secure-)?(?:${RegExp.escape(sessionCookieName)}|notenra_session|anot_session)=([^;]+)');
 
   /// Pull the session JWT out of a response's Set-Cookie header(s), if present.
-  /// Matches both `__Host-anot_session=` and the dev `anot_session=`.
+  /// Matches the bare cookie name and the `__Host-` / `__Secure-` prefixed forms.
   static String? sessionJwtFromHeaders(Headers headers) {
     final cookies = headers.map['set-cookie'];
     if (cookies == null) return null;
@@ -57,8 +68,25 @@ class ApiClient {
       final jwt = m?.group(1);
       if (jwt != null && jwt.isNotEmpty) return jwt;
     }
+    // Set-Cookie present but none matched: possibly a server whose session
+    // cookie is named something other than [sessionCookieName]. Log it ONCE per
+    // run — most responses legitimately carry only the CSRF cookie, so logging
+    // every time would bury the signal. Cookie names only, never values.
+    if (cookies.isNotEmpty && !_warnedNoSessionCookie) {
+      _warnedNoSessionCookie = true;
+      final names = cookies
+          .map((c) => c.split('=').first.trim())
+          .where((n) => n.isNotEmpty)
+          .join(', ');
+      AppLog.log(
+          'AUTH',
+          'no "$sessionCookieName" cookie seen yet; first response carried: '
+              '$names — if sign-in fails, check the SESSION_COOKIE_NAME define');
+    }
     return null;
   }
+
+  static bool _warnedNoSessionCookie = false;
 
   ApiClient(this.tokens) {
     dio = Dio(BaseOptions(
@@ -78,8 +106,12 @@ class ApiClient {
 
     dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) async {
-        // Keep the base URL in sync if it was changed in Settings.
+        // Re-read the base URL each request so a debug/QA override takes effect
+        // without rebuilding the Dio instance.
         options.baseUrl = ApiConfig.baseUrl;
+        // Identify the client on every request so server-side audit rows are
+        // attributable to this device rather than defaulting to "web".
+        options.headers.addAll(ClientIdentity.headers);
         // Attach the stored JWT — but NEVER clobber an Authorization header the
         // caller set explicitly (e.g. the short-lived temporary token used for
         // the forced first-login password change). Overwriting it with a stale

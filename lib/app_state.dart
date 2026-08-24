@@ -129,7 +129,6 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> _loadConfig() async {
-    _serverUrl = await Security.getServerUrl();
     _onboardingComplete =
         (await _markerStore.read(key: _onboardingKey)) == '1';
     notifyListeners();
@@ -152,16 +151,12 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
   }
 
-  // App configuration
-  String _serverUrl = Security.defaultServerUrl;
-  String get serverUrl => _serverUrl;
-  Future<void> setServerUrl(String url) async {
-    if (url.trim().isEmpty) return;
-    _serverUrl = url.trim();
-    await Security.setServerUrl(_serverUrl);
-    await _audit('SYSTEM_CONFIG_CHANGE', details: 'Server URL updated to $_serverUrl');
-    notifyListeners();
-  }
+  // The backend address is not configurable here: it is fixed at build time in
+  // [ApiConfig] (`--dart-define=API_BASE_URL=…`). A previous `serverUrl` setting
+  // lived on this class with its own getter, setter and audit write, but was
+  // never passed to the HTTP layer — so changing it moved no traffic. Removed
+  // rather than wired up, since a clinician-editable server address would let
+  // PHI uploads be redirected.
 
   /// Manually re-lock the PHI vault (Settings ▸ Lock now).
   void lockVaultNow() {
@@ -714,15 +709,46 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   // --- Audit trail (HIPAA audit controls) ---
+
+  /// Every audit write goes through here, so this is the one place that can
+  /// guarantee the trail is PHI-free.
+  ///
+  /// [patientId] is the correct way to tie an event to a patient: it is a
+  /// reference, not an identifier, and it stays meaningful after the row leaves
+  /// the device. [details] is free text for the human reading the log and must
+  /// never name a patient — it is scrubbed by [_scrubDetails] as a backstop.
   Future<void> _audit(String action, {String? clinician, int? patientId, String details = ''}) async {
     await _db.insertAudit(AuditEntry(
       clinicianId: _currentUser?.id ?? -1,
       clinicianName: clinician ?? _currentUser?.fullName ?? 'system',
       action: action,
       patientId: patientId,
-      details: details,
+      details: _scrubDetails(details),
       timestamp: DateTime.now().millisecondsSinceEpoch,
     ));
+  }
+
+  /// Last-resort PHI filter for an audit detail string.
+  ///
+  /// Call sites are written not to include PHI, but audit rows are retained for
+  /// years and are shipped to the server, so a leak introduced later would be
+  /// both durable and remote. This catches the two identifiers the app actually
+  /// handles: an MRN in any of its written forms, and the name of any patient
+  /// currently loaded. It is a backstop, not a licence — the clinician's own
+  /// name and email stay, because an audit trail's whole purpose is recording
+  /// who acted.
+  String _scrubDetails(String details) {
+    if (details.isEmpty) return details;
+    var out = details.replaceAll(
+        RegExp(r'\bMRN[-\s:]?[A-Za-z0-9][A-Za-z0-9-]*', caseSensitive: false),
+        '[mrn]');
+    for (final p in _patients) {
+      final name = p.name.trim();
+      // Two characters or fewer would match far too much ("Al", initials).
+      if (name.length < 3) continue;
+      if (out.contains(name)) out = out.replaceAll(name, '[patient]');
+    }
+    return out.length <= 500 ? out : '${out.substring(0, 497)}...';
   }
 
   Future<List<AuditEntry>> loadAuditLogs() => _db.getAuditLogs();
@@ -863,7 +889,7 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
         return false;
       }
       await _audit('ADD_PATIENT',
-          details: 'Added patient ${name.trim()} ($mrn) [live]');
+          patientId: _lastAddedPatientId, details: 'Added patient [live]');
       notifyListeners();
       return true;
     }
@@ -877,10 +903,13 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
       medicalHistory: medicalHistory.trim(),
       specialty: specialty.trim().isEmpty ? 'General' : specialty.trim(),
     ));
-    await _audit('ADD_PATIENT', details: 'Added patient ${name.trim()} ($mrn)');
     await _refreshPatients();
     final match = _patients.where((p) => p.mrn == mrn.trim()).toList();
     _lastAddedPatientId = match.isNotEmpty ? match.first.id : null;
+    // Audited after the refresh so the row can carry the patient id instead of
+    // the name and MRN it used to record.
+    await _audit('ADD_PATIENT',
+        patientId: _lastAddedPatientId, details: 'Added patient');
     notifyListeners();
     return true;
   }
@@ -1006,7 +1035,7 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
     _selectedPatient = patientById(patientId);
     await loadRecordings(patientId);
     await _audit('VIEW_PATIENT_RECORDS', patientId: patientId,
-        details: 'Opened visit for ${_selectedPatient?.name ?? patientId}');
+        details: 'Opened visit');
     notifyListeners();
   }
 

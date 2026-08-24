@@ -99,6 +99,11 @@ class AuditEntry {
   final String details;
   final int timestamp;
 
+  /// True once the server has accepted this row. Local-only bookkeeping for
+  /// audit shipping — it is never sent, and retention only ever deletes rows
+  /// where this is true, so an unshipped event cannot be aged out.
+  final bool synced;
+
   AuditEntry({
     this.id = 0,
     required this.clinicianId,
@@ -107,6 +112,7 @@ class AuditEntry {
     this.patientId,
     this.details = '',
     required this.timestamp,
+    this.synced = false,
   });
 
   Map<String, Object?> toMap() => {
@@ -117,6 +123,7 @@ class AuditEntry {
         'patientId': patientId,
         'details': details,
         'timestamp': timestamp,
+        'synced': synced ? 1 : 0,
       };
 
   factory AuditEntry.fromMap(Map<String, Object?> m) => AuditEntry(
@@ -127,6 +134,7 @@ class AuditEntry {
         patientId: m['patientId'] as int?,
         details: (m['details'] as String?) ?? '',
         timestamp: m['timestamp'] as int,
+        synced: (m['synced'] as int?) == 1,
       );
 }
 

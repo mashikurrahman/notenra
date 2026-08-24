@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 
 import 'app_state.dart';
 import 'api/api_config.dart';
+import 'api/client_identity.dart';
 import 'api/token_store.dart';
 import 'services/clinical_service.dart';
 import 'services/connectivity_service.dart';
@@ -47,6 +48,9 @@ Future<void> main() async {
     } catch (e) {
       startupErrors.add('config: $e');
     }
+    // Client attribution headers (device id + user agent). Must resolve before
+    // the first request so no call goes out unattributed; it never throws.
+    await ClientIdentity.init();
     try {
       await tokens.load();
     } catch (e) {

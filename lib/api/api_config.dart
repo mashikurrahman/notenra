@@ -1,30 +1,52 @@
 
 import '../secure_store.dart';
 
-/// Holds the Anot Health backend base URL. Defaults to the production
-/// CloudFront API from the platform docs; overridable in Settings.
+/// Holds the backend base URL — the single source of truth for where the app
+/// sends PHI.
+///
+/// The value is chosen at BUILD time via `--dart-define=API_BASE_URL=…`, so a
+/// dev/staging/production build can be pointed at a different server without a
+/// code change:
+///
+///   flutter build apk --dart-define=API_BASE_URL=https://api.example.com/api
+///
+/// The URL must include whatever path prefix the server mounts its routes
+/// under (the app appends bare paths like `/visits`), and must be HTTPS —
+/// cleartext is blocked at the platform level on both Android
+/// (`usesCleartextTraffic="false"`) and iOS (App Transport Security).
+///
+/// There is deliberately no release UI for changing this: a clinician-editable
+/// server field would let PHI uploads be redirected to an arbitrary host. The
+/// [setBaseUrl] override exists for debug/QA builds only.
 class ApiConfig {
   static const _secure = SecureStore();
   static const _key = 'api_base_url';
 
-  /// Production API (VITE_API_URL). Moved to the app.anot.health domain in the
-  /// 2026-07-02 multi-portal SaaS restructure (was the CloudFront distribution
-  /// URL, which now 502s).
-  static const defaultBaseUrl = 'https://app.anot.health/api';
+  /// Compile-time default. Falls back to the Anot Health production API when no
+  /// `API_BASE_URL` define is passed, so existing builds are unaffected.
+  static const defaultBaseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: 'https://app.anot.health/api',
+  );
 
   static String _baseUrl = defaultBaseUrl;
   static String get baseUrl => _baseUrl;
 
+  /// True when a debug/QA override is in effect rather than the built-in value.
+  static bool get isOverridden => _baseUrl != defaultBaseUrl;
+
+  /// Host of the active server, for read-only display in the UI (support needs
+  /// to be able to ask "which server is this device on?"). Never the full URL
+  /// with path — the host is the part that matters and the part that fits.
+  static String get displayHost {
+    final uri = Uri.tryParse(_baseUrl);
+    final host = uri?.host;
+    return (host == null || host.isEmpty) ? _baseUrl : host;
+  }
+
   static Future<void> load() async {
     final saved = await _secure.read(key: _key);
-    // Drop a stale saved override pointing at the retired CloudFront API so an
-    // upgraded install isn't stranded on the dead host — fall back to the new
-    // default. (A user-set custom URL to any other host is still honored.)
-    if (saved != null &&
-        saved.isNotEmpty &&
-        !saved.contains('d3t0m4s0ayca85.cloudfront.net')) {
-      _baseUrl = saved;
-    }
+    if (saved != null && saved.isNotEmpty) _baseUrl = saved;
   }
 
   static Future<void> setBaseUrl(String url) async {
@@ -32,5 +54,11 @@ class ApiConfig {
     if (clean.isEmpty) return;
     _baseUrl = clean;
     await _secure.write(key: _key, value: clean);
+  }
+
+  /// Discard any saved override and return to the compiled-in default.
+  static Future<void> clearOverride() async {
+    _baseUrl = defaultBaseUrl;
+    await _secure.delete(key: _key);
   }
 }

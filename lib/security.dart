@@ -74,13 +74,25 @@ class Security {
     return key;
   }
 
-  // ---- App configuration ----
-  static const _serverUrlName = 'server_url';
-  static const defaultServerUrl = 'https://api.anot.health/';
+  // ---- Device identity (audit attribution) ----
 
-  static Future<String> getServerUrl() async =>
-      (await _secure.read(key: _serverUrlName)) ?? defaultServerUrl;
+  static const _deviceIdName = 'device_id_v1';
 
-  static Future<void> setServerUrl(String url) async =>
-      _secure.write(key: _serverUrlName, value: url);
+  /// A stable, opaque identifier for this install, generated on first use and
+  /// persisted in the OS keystore.
+  ///
+  /// Deliberately random rather than derived from any hardware id: it carries no
+  /// PHI and nothing about the device or the clinician, so it is safe to log and
+  /// to send to the server. It lets an audit reviewer group a phone's events
+  /// together and tell two of a clinician's devices apart. It survives app
+  /// restarts and is regenerated on reinstall (keystore entries are cleared with
+  /// the app), which is the correct trade — a reinstalled app is, for audit
+  /// purposes, a new device.
+  static Future<String> getOrCreateDeviceId() async {
+    final existing = await _secure.read(key: _deviceIdName);
+    if (existing != null && existing.isNotEmpty) return existing;
+    final id = base64Url.encode(_randomBytes(16)).replaceAll('=', '');
+    await _secure.write(key: _deviceIdName, value: id);
+    return id;
+  }
 }

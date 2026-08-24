@@ -22,7 +22,7 @@ class AppDatabase {
     _db = await openDatabase(
       path,
       password: key,
-      version: 3,
+      version: 4,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -37,6 +37,13 @@ class AppDatabase {
     if (oldVersion < 3) {
       await db.execute(
           "ALTER TABLE recordings ADD COLUMN uploadStatus TEXT NOT NULL DEFAULT 'pending'");
+    }
+    if (oldVersion < 4) {
+      // Tracks whether an audit row has been accepted by the server. Existing
+      // rows default to 0 (unshipped) so history recorded before audit shipping
+      // existed is still sent up rather than silently skipped.
+      await db.execute(
+          'ALTER TABLE audit_logs ADD COLUMN synced INTEGER NOT NULL DEFAULT 0');
     }
   }
 
@@ -94,8 +101,13 @@ class AppDatabase {
         action TEXT NOT NULL,
         patientId INTEGER,
         details TEXT NOT NULL DEFAULT '',
-        timestamp INTEGER NOT NULL
+        timestamp INTEGER NOT NULL,
+        synced INTEGER NOT NULL DEFAULT 0
       )''');
+    // Shipping scans for unsynced rows on every flush; retention deletes by
+    // timestamp among synced rows. Both are covered by one composite index.
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_audit_synced ON audit_logs(synced, timestamp)');
     await db.execute(_appointmentsTable);
   }
 
@@ -276,5 +288,49 @@ class AppDatabase {
     final rows =
         await db.query('audit_logs', orderBy: 'timestamp DESC', limit: limit);
     return rows.map(AuditEntry.fromMap).toList();
+  }
+
+  /// Oldest-first batch of audit rows the server hasn't accepted yet.
+  ///
+  /// Ascending by id so events reach the server in the order they happened, and
+  /// so a row that repeatedly fails to ship stays at the head of the batch
+  /// instead of being starved by newer ones.
+  Future<List<AuditEntry>> getUnsyncedAudit({int limit = 200}) async {
+    final db = await database;
+    final rows = await db.query('audit_logs',
+        where: 'synced = 0', orderBy: 'id ASC', limit: limit);
+    return rows.map(AuditEntry.fromMap).toList();
+  }
+
+  /// Mark rows as accepted by the server. Call only after a confirmed success —
+  /// marking optimistically would lose the events on a failed request.
+  Future<void> markAuditSynced(List<int> ids) async {
+    if (ids.isEmpty) return;
+    final db = await database;
+    final placeholders = List.filled(ids.length, '?').join(',');
+    await db.rawUpdate(
+        'UPDATE audit_logs SET synced = 1 WHERE id IN ($placeholders)', ids);
+  }
+
+  Future<int> unsyncedAuditCount() async {
+    final db = await database;
+    return Sqflite.firstIntValue(await db
+            .rawQuery('SELECT COUNT(*) FROM audit_logs WHERE synced = 0')) ??
+        0;
+  }
+
+  /// Local retention: drop audit rows older than [age] that the server already
+  /// holds.
+  ///
+  /// The `synced = 1` predicate is the point of this method — the server is the
+  /// system of record for the 7-year retention period, and the device keeps only
+  /// a recent window. A row that has never shipped is never deleted here no
+  /// matter how old it is, so an event can't be lost by a phone that spent
+  /// months offline.
+  Future<int> purgeSyncedAuditOlderThan(Duration age) async {
+    final db = await database;
+    final cutoff = DateTime.now().subtract(age).millisecondsSinceEpoch;
+    return db.delete('audit_logs',
+        where: 'synced = 1 AND timestamp < ?', whereArgs: [cutoff]);
   }
 }
