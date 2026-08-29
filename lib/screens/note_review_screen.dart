@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
@@ -9,14 +10,94 @@ import '../theme.dart';
 import '../widgets/notenra_header.dart';
 import '../widgets/nx.dart';
 
+class _SoapSection {
+  final String key;
+  final String title;
+  final String content;
+  final Color color;
+  final IconData icon;
+
+  const _SoapSection({
+    required this.key,
+    required this.title,
+    required this.content,
+    required this.color,
+    required this.icon,
+  });
+}
+
+List<_SoapSection> _parseSoap(String text) {
+  final lines = text.split('\n');
+  final result = <_SoapSection>[];
+  String? curKey;
+  String? curTitle;
+  Color curColor = Nx.primary;
+  IconData curIcon = Icons.notes;
+  final buf = StringBuffer();
+
+  void flush() {
+    final key = curKey;
+    if (key != null && buf.isNotEmpty) {
+      result.add(_SoapSection(
+        key: key,
+        title: curTitle ?? key,
+        content: buf.toString().trim(),
+        color: curColor,
+        icon: curIcon,
+      ));
+      buf.clear();
+    }
+  }
+
+  for (final line in lines) {
+    final t = line.trim();
+    final lower = t.toLowerCase();
+    if (lower.startsWith('subjective:') || lower == 'subjective') {
+      flush();
+      curKey = 'SUBJECTIVE';
+      curTitle = 'Subjective';
+      curColor = const Color(0xFF2563EB);
+      curIcon = Icons.record_voice_over;
+      final rest = t.replaceFirst(RegExp(r'^subjective:?', caseSensitive: false), '').trim();
+      if (rest.isNotEmpty) buf.writeln(rest);
+    } else if (lower.startsWith('objective:') || lower == 'objective') {
+      flush();
+      curKey = 'OBJECTIVE';
+      curTitle = 'Objective';
+      curColor = const Color(0xFF0D9488);
+      curIcon = Icons.biotech;
+      final rest = t.replaceFirst(RegExp(r'^objective:?', caseSensitive: false), '').trim();
+      if (rest.isNotEmpty) buf.writeln(rest);
+    } else if (lower.startsWith('assessment:') || lower == 'assessment') {
+      flush();
+      curKey = 'ASSESSMENT';
+      curTitle = 'Assessment';
+      curColor = const Color(0xFFD97706);
+      curIcon = Icons.analytics_outlined;
+      final rest = t.replaceFirst(RegExp(r'^assessment:?', caseSensitive: false), '').trim();
+      if (rest.isNotEmpty) buf.writeln(rest);
+    } else if (lower.startsWith('plan:') || lower == 'plan') {
+      flush();
+      curKey = 'PLAN';
+      curTitle = 'Plan';
+      curColor = const Color(0xFF10B981);
+      curIcon = Icons.playlist_add_check;
+      final rest = t.replaceFirst(RegExp(r'^plan:?', caseSensitive: false), '').trim();
+      if (rest.isNotEmpty) buf.writeln(rest);
+    } else {
+      if (curKey != null) {
+        buf.writeln(line);
+      }
+    }
+  }
+  flush();
+  return result;
+}
+
 /// The clinician's review of a scribe-completed note:
 ///   read -> small edits yourself  OR  request changes (comment to scribe)
 ///   OR  approve as final.
 /// No "generate transcript" action; no EHR upload (the scribe does that).
-///
-/// The note itself is the page: state and timing sit in the header, the scribe
-/// conversation collapses above the note, and the only persistent chrome is the
-/// action bar — so the clinician reads a document, not a dashboard.
 class NoteReviewScreen extends StatefulWidget {
   final String visitId;
   const NoteReviewScreen({super.key, required this.visitId});
@@ -27,13 +108,10 @@ class NoteReviewScreen extends StatefulWidget {
 
 class _NoteReviewScreenState extends State<NoteReviewScreen> {
   bool _editing = false;
-  // The sentence/phrase the doctor has highlighted in the note, so a change
-  // request can be anchored to exactly that text for the scribe.
   String _selected = '';
+  String _soapFilter = 'ALL';
   late TextEditingController _editCtrl;
 
-  // The note body is fetched on open (the list only carries status). While the
-  // fetch is in flight we show a loader; if it can't be loaded we offer a retry.
   bool _loadingNote = false;
   bool _loadFailed = false;
 
@@ -53,10 +131,6 @@ class _NoteReviewScreenState extends State<NoteReviewScreen> {
     if (!mounted) return;
     setState(() {
       _loadingNote = false;
-      // A hard failure: the fetch finished but no note body arrived (offline,
-      // server error, …). Show a retry instead of re-fetching forever. A
-      // still-with-scribe note never reaches this path — it shows the busy
-      // state — so we don't need to special-case status here.
       final v = context.read<ClinicalService>().visitById(widget.visitId);
       _loadFailed = !ok && v?.note == null;
     });
@@ -105,13 +179,24 @@ class _NoteReviewScreenState extends State<NoteReviewScreen> {
                 : visit.patientName,
             subtitle: '${s.detail}  ·  $when',
             actions: [
-              if (visit.note != null)
+              if (visit.note != null) ...[
+                HeaderIconButton(
+                  icon: Icons.copy,
+                  tooltip: 'Copy full note',
+                  onTap: () {
+                    Clipboard.setData(ClipboardData(text: visit.note!.content));
+                    HapticFeedback.lightImpact();
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                        content: Text('Full note copied to clipboard.')));
+                  },
+                ),
                 HeaderIconButton(
                   icon: Icons.refresh,
                   tooltip: 'Reload note',
                   busy: _loadingNote,
                   onTap: _loadingNote ? null : _loadNote,
                 ),
+              ],
             ],
           ),
           Expanded(child: _body(context, svc, visit)),
@@ -126,12 +211,6 @@ class _NoteReviewScreenState extends State<NoteReviewScreen> {
         visit.status == VisitStatus.changesRequested ||
         visit.status == VisitStatus.pendingUpload;
 
-    // The note is ready on the server but its body hasn't loaded onto the
-    // device yet (still fetching, or the fetch failed). Show a loader / retry
-    // rather than the "with scribe" copy, which would be misleading. Kick off
-    // the fetch from here so it also recovers if the note is ever dropped (e.g.
-    // a scribe revision invalidated the cached body). The _loadingNote guard
-    // stops this from re-firing every rebuild.
     if (note == null && !isBusy) {
       if (_loadFailed) return _loadFailedState();
       if (!_loadingNote) {
@@ -147,17 +226,20 @@ class _NoteReviewScreenState extends State<NoteReviewScreen> {
     final approved = visit.status == VisitStatus.approved ||
         visit.status == VisitStatus.syncedToEhr;
 
+    final parsedSections = _parseSoap(note.content);
+
     return Column(
       children: [
+        if (!_editing && parsedSections.isNotEmpty) _soapTabs(parsedSections),
         Expanded(
           child: ListView(
-            padding: const EdgeInsets.fromLTRB(Nx.s4, Nx.s4, Nx.s4, Nx.s8),
+            padding: const EdgeInsets.fromLTRB(Nx.s4, Nx.s3, Nx.s4, Nx.s8),
             children: [
               if (note.feedback.isNotEmpty) ...[
                 _feedbackHistory(note),
                 const SizedBox(height: Nx.s3),
               ],
-              _noteCard(note, reviewable),
+              _noteCard(note, reviewable, parsedSections),
             ],
           ),
         ),
@@ -171,9 +253,51 @@ class _NoteReviewScreenState extends State<NoteReviewScreen> {
     );
   }
 
-  // --- The note itself ----------------------------------------------------
+  Widget _soapTabs(List<_SoapSection> sections) {
+    final availableKeys = {'ALL', ...sections.map((s) => s.key)};
+    final tabs = [
+      ('ALL', 'All sections', Icons.dashboard_outlined),
+      ('SUBJECTIVE', 'Subjective (S)', Icons.record_voice_over),
+      ('OBJECTIVE', 'Objective (O)', Icons.biotech),
+      ('ASSESSMENT', 'Assessment (A)', Icons.analytics_outlined),
+      ('PLAN', 'Plan (P)', Icons.playlist_add_check),
+    ].where((t) => availableKeys.contains(t.$1)).toList();
 
-  Widget _noteCard(ClinicalNote note, bool reviewable) {
+    return Container(
+      height: 48,
+      padding: const EdgeInsets.symmetric(horizontal: Nx.s4, vertical: 6),
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: tabs.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 8),
+        itemBuilder: (ctx, i) {
+          final t = tabs[i];
+          final active = _soapFilter == t.$1;
+          return FilterChip(
+            selected: active,
+            showCheckmark: false,
+            avatar: Icon(t.$3,
+                size: 14, color: active ? Colors.white : Nx.primary),
+            label: Text(t.$2,
+                style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: active ? Colors.white : Nx.ink)),
+            selectedColor: Nx.primary,
+            backgroundColor: Nx.card,
+            side: BorderSide(
+                color: active ? Nx.primary : Nx.border, width: 1),
+            onSelected: (_) {
+              HapticFeedback.selectionClick();
+              setState(() => _soapFilter = t.$1);
+            },
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _noteCard(ClinicalNote note, bool reviewable, List<_SoapSection> sections) {
     return NxCard(
       elevated: true,
       borderColor: _editing ? Nx.primary : Nx.border,
@@ -208,7 +332,7 @@ class _NoteReviewScreenState extends State<NoteReviewScreen> {
             ],
           ),
           const Padding(
-            padding: EdgeInsets.symmetric(vertical: Nx.s4),
+            padding: EdgeInsets.symmetric(vertical: Nx.s3),
             child: Divider(height: 1),
           ),
           if (_editing)
@@ -221,13 +345,15 @@ class _NoteReviewScreenState extends State<NoteReviewScreen> {
                   color: Nx.secondary, height: 1.6, fontSize: 14.5),
               decoration: const InputDecoration(isDense: true),
             )
+          else if (sections.isNotEmpty)
+            _renderSoapSections(sections, note)
           else
             SelectableText(note.content,
                 onSelectionChanged: (sel, _) => setState(
                     () => _selected = sel.textInside(note.content).trim()),
                 style: const TextStyle(
                     color: Nx.secondary, height: 1.6, fontSize: 14.5)),
-          if (!_editing && reviewable)
+          if (!_editing && reviewable && sections.isEmpty)
             Padding(
               padding: const EdgeInsets.only(top: Nx.s3),
               child: Text(
@@ -244,13 +370,88 @@ class _NoteReviewScreenState extends State<NoteReviewScreen> {
     );
   }
 
+  Widget _renderSoapSections(List<_SoapSection> sections, ClinicalNote note) {
+    final filtered = _soapFilter == 'ALL'
+        ? sections
+        : sections.where((s) => s.key == _soapFilter).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: filtered.map((sec) {
+        return Container(
+          margin: const EdgeInsets.only(bottom: 14),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Nx.surface,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: Nx.border),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: sec.color.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(sec.icon, size: 14, color: sec.color),
+                        const SizedBox(width: 5),
+                        Text(
+                          sec.title.toUpperCase(),
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w800,
+                            color: sec.color,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.copy, size: 15, color: Nx.muted),
+                    tooltip: 'Copy ${sec.title}',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () {
+                      Clipboard.setData(ClipboardData(text: sec.content));
+                      HapticFeedback.lightImpact();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('${sec.title} copied to clipboard.')),
+                      );
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              SelectableText(
+                sec.content,
+                onSelectionChanged: (sel, _) => setState(
+                    () => _selected = sel.textInside(sec.content).trim()),
+                style: const TextStyle(
+                  color: Nx.ink,
+                  fontSize: 14,
+                  height: 1.55,
+                ),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+
   void _startEditing(ClinicalNote note) {
     _editCtrl.text = note.content;
     setState(() => _editing = true);
   }
 
-  /// The back-and-forth with the scribe, newest last — a conversation thread
-  /// rather than a flat bullet list, so it's clear these were your requests.
   Widget _feedbackHistory(ClinicalNote note) {
     return NxCard(
       color: Nx.surface,
@@ -297,8 +498,6 @@ class _NoteReviewScreenState extends State<NoteReviewScreen> {
     );
   }
 
-  // --- Non-note states ----------------------------------------------------
-
   Widget _spinnerState(String message) {
     return const NxNoteSkeleton();
   }
@@ -319,55 +518,36 @@ class _NoteReviewScreenState extends State<NoteReviewScreen> {
   Widget _busyState(Visit visit) {
     final s = styleFor(visit.status);
     final msg = switch (visit.status) {
-      VisitStatus.pendingUpload => 'Waiting to upload the recording…',
-      VisitStatus.withScribe => 'With the scribe — completing the note…',
+      VisitStatus.withScribe =>
+        'The scribe is drafting this note. It will appear here when ready for review.',
       VisitStatus.changesRequested =>
-        'Sent back to the scribe with your comments…',
-      _ => 'Working…',
+        'Your comments were sent. The scribe is updating the note.',
+      VisitStatus.pendingUpload =>
+        'Your recording is queued to upload. The note will be drafted once received.',
+      _ => 'This note is being processed.',
     };
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(Nx.s8),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 68,
-              height: 68,
-              decoration: BoxDecoration(
-                color: s.color.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(Nx.rLg),
-              ),
-              child: Icon(s.icon, size: 30, color: s.color),
-            ),
-            const SizedBox(height: Nx.s4),
-            Text(msg,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                    color: Nx.ink, fontWeight: FontWeight.w700, fontSize: 15)),
-            const SizedBox(height: Nx.s1),
-            const Text('This updates automatically.',
-                style: TextStyle(color: Nx.muted, fontSize: 12.5)),
-          ],
-        ),
+
+    return NxEmptyState(
+      icon: s.icon,
+      title: s.label,
+      hint: msg,
+      action: OutlinedButton.icon(
+        onPressed: _loadingNote ? null : _loadNote,
+        icon: const Icon(Icons.refresh, size: 18),
+        label: const Text('Check for updates'),
       ),
     );
   }
 
-  // --- Action bars --------------------------------------------------------
-
   Widget _actionBar({required Widget child}) {
-    return SafeArea(
-      top: false,
-      child: Container(
-        padding: const EdgeInsets.all(Nx.s4),
-        decoration: BoxDecoration(
-          color: Nx.card,
-          border: const Border(top: BorderSide(color: Nx.border)),
-          boxShadow: Nx.cardShadow,
-        ),
-        child: child,
+    return Container(
+      padding: const EdgeInsets.all(Nx.s4),
+      decoration: BoxDecoration(
+        color: Nx.card,
+        border: const Border(top: BorderSide(color: Nx.border)),
+        boxShadow: Nx.cardShadow,
       ),
+      child: SafeArea(top: false, child: child),
     );
   }
 
@@ -435,8 +615,6 @@ class _NoteReviewScreenState extends State<NoteReviewScreen> {
               const SizedBox(width: Nx.s3),
               Expanded(
                 child: FilledButton.icon(
-                  // Approving is the app's other green action: it completes the
-                  // note the same way recording completes the encounter.
                   style: FilledButton.styleFrom(backgroundColor: Nx.accent),
                   onPressed: () => _confirmApprove(context, svc, visit),
                   icon: const Icon(Icons.check_circle, size: 18),
@@ -485,22 +663,20 @@ class _NoteReviewScreenState extends State<NoteReviewScreen> {
 
   Widget _approvedFooter() {
     return _actionBar(
-      child: const Row(
-        children: [
-          Icon(Icons.verified, color: Nx.accent),
-          SizedBox(width: Nx.s3),
-          Flexible(
-            child: Text(
-              'Approved as final. The scribe will upload it to the EHR.',
-              style: TextStyle(color: Nx.secondary, fontSize: 13),
-            ),
-          ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: const [
+          Icon(Icons.check_circle_outline, color: Nx.accent, size: 18),
+          SizedBox(width: Nx.s2),
+          Text('Note approved — ready for EHR upload by scribe',
+              style: TextStyle(
+                  color: Nx.secondary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600)),
         ],
       ),
     );
   }
-
-  // --- Dialogs ------------------------------------------------------------
 
   Future<void> _promptChanges(
       BuildContext context, ClinicalService svc, Visit visit,
@@ -509,14 +685,14 @@ class _NoteReviewScreenState extends State<NoteReviewScreen> {
     final comment = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(
-            quote.isEmpty ? 'Request changes' : 'Comment on selection'),
+        title: const Text('Comments for the scribe'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (quote.isNotEmpty) ...[
               Container(
+                width: double.infinity,
                 padding: const EdgeInsets.all(Nx.s3),
                 decoration: const BoxDecoration(
                   color: Nx.surface,
@@ -530,13 +706,27 @@ class _NoteReviewScreenState extends State<NoteReviewScreen> {
               ),
               const SizedBox(height: Nx.s3),
             ],
+            const Text('Quick templates:',
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Nx.muted)),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                _templateChip('Add Medication Dosage', controller),
+                _templateChip('Expand Assessment', controller),
+                _templateChip('Update Follow-up Plan', controller),
+                _templateChip('Grammar & Formatting', controller),
+              ],
+            ),
+            const SizedBox(height: 10),
             TextField(
               controller: controller,
               autofocus: true,
               maxLines: 4,
               decoration: InputDecoration(
                 hintText: quote.isEmpty
-                    ? 'What should the scribe change? e.g. "Add the BP reading to Objective."'
+                    ? 'What should the scribe change? e.g. "Add BP reading to Objective."'
                     : 'What should change about this sentence?',
               ),
             ),
@@ -553,8 +743,6 @@ class _NoteReviewScreenState extends State<NoteReviewScreen> {
       ),
     );
     if (comment != null && comment.isNotEmpty) {
-      // Anchor the comment to the highlighted sentence so the scribe knows
-      // exactly what to change.
       final message = quote.isEmpty ? comment : 'Re: "$quote"\n$comment';
       await svc.requestChanges(visit.id, message);
       if (mounted) setState(() => _selected = '');
@@ -563,6 +751,23 @@ class _NoteReviewScreenState extends State<NoteReviewScreen> {
             content: Text('Sent to the scribe with your comments.')));
       }
     }
+  }
+
+  Widget _templateChip(String text, TextEditingController controller) {
+    return ActionChip(
+      label: Text(text, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+      backgroundColor: Nx.surface,
+      side: const BorderSide(color: Nx.border),
+      padding: EdgeInsets.zero,
+      onPressed: () {
+        HapticFeedback.selectionClick();
+        if (controller.text.isEmpty) {
+          controller.text = text;
+        } else {
+          controller.text = '${controller.text}; $text';
+        }
+      },
+    );
   }
 
   Future<void> _confirmApprove(

@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
@@ -69,6 +70,7 @@ class _PatientVisitScreenState extends State<PatientVisitScreen>
     if (state.isRecording) return;
     final ok = await _confirmConsent();
     if (ok != true || !mounted) return;
+    HapticFeedback.mediumImpact();
     await state.startRecording(widget.patientId);
   }
 
@@ -118,29 +120,27 @@ class _PatientVisitScreenState extends State<PatientVisitScreen>
               ),
               const SizedBox(height: Nx.s4),
               InkWell(
-                onTap: () => setLocal(() => checked = !checked),
                 borderRadius: BorderRadius.circular(Nx.rSm),
-                child: Container(
-                  padding: const EdgeInsets.fromLTRB(Nx.s2, 4, Nx.s3, 4),
-                  decoration: BoxDecoration(
-                    color: checked ? Nx.accentSoft : Nx.surface,
-                    borderRadius: BorderRadius.circular(Nx.rSm),
-                    border: Border.all(
-                        color: checked ? Nx.accent : Nx.border),
-                  ),
+                onTap: () => setLocal(() => checked = !checked),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
                   child: Row(
                     children: [
                       Checkbox(
                         value: checked,
                         activeColor: Nx.accent,
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         onChanged: (v) => setLocal(() => checked = v ?? false),
                       ),
+                      const SizedBox(width: 8),
                       const Expanded(
-                        child: Text('Patient authorizes recording',
-                            style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                                color: Nx.ink)),
+                        child: Text(
+                          'Patient gave verbal consent',
+                          style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: Nx.ink),
+                        ),
                       ),
                     ],
                   ),
@@ -150,8 +150,9 @@ class _PatientVisitScreenState extends State<PatientVisitScreen>
           ),
           actions: [
             TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('Cancel')),
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
             FilledButton(
               style: FilledButton.styleFrom(backgroundColor: Nx.accent),
               onPressed: checked ? () => Navigator.pop(ctx, true) : null,
@@ -163,39 +164,27 @@ class _PatientVisitScreenState extends State<PatientVisitScreen>
     );
   }
 
-  /// A recording longer than this asks for confirmation before a whole-card tap
-  /// ends it. The card is a deliberately huge target, so a stray tap during a
-  /// long visit would otherwise split the encounter into two files. The explicit
-  /// stop button is a deliberate press and never asks.
-  static const _confirmStopAfter = Duration(minutes: 2);
-
-  /// Stop triggered by tapping the card. Confirms first once the recording is
-  /// long enough to be worth protecting; short ones stop immediately (cheap to
-  /// redo, and the prompt would just be friction).
+  /// Tapping the card while recording prompts to stop. A plain dialog is used so
+  /// a bump or pocket tap cannot accidentally discard/submit mid-consultation.
   Future<void> _stopFromCardTap(AppState state) async {
-    if (state.recordingSeconds >= _confirmStopAfter.inSeconds) {
-      final ok = await _confirmStop(state.recordingSeconds);
-      if (ok != true || !mounted) return;
+    final stop = await _confirmStop();
+    if (stop == true && mounted) {
+      await _stopAndSubmit();
     }
-    await _stopAndSubmit();
   }
 
-  Future<bool?> _confirmStop(int seconds) => showDialog<bool>(
+  Future<bool?> _confirmStop() => showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text('Stop recording?',
-              style:
-                  TextStyle(fontWeight: FontWeight.w800, color: Nx.ink)),
-          content: Text(
-            'This visit has been recording for ${_fmt(seconds * 1000)}. '
-            'Stopping saves it and sends it to the scribe.',
-            style:
-                const TextStyle(fontSize: 14, height: 1.5, color: Nx.secondary),
-          ),
+          title: const Text('Stop recording?'),
+          content: const Text(
+              'This will save the audio and queue it to upload to the scribe. '
+              'The note will appear in the Notes tab once generated.'),
           actions: [
             TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('Keep recording')),
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Keep recording'),
+            ),
             FilledButton(
               style: FilledButton.styleFrom(backgroundColor: Nx.danger),
               onPressed: () => Navigator.pop(ctx, true),
@@ -210,6 +199,7 @@ class _PatientVisitScreenState extends State<PatientVisitScreen>
   /// so a long recording never freezes the app on stop. No review screen — the
   /// scribe completes the note; it appears in the Notes tab when ready.
   Future<void> _stopAndSubmit() async {
+    HapticFeedback.heavyImpact();
     final state = context.read<AppState>();
     final saved = await state.stopAndSaveRecording();
     if (!mounted) return;
@@ -384,34 +374,36 @@ class _PatientVisitScreenState extends State<PatientVisitScreen>
 
   Widget _recorderCard(AppState state, bool recording) {
     final paused = recording && state.isPaused;
-    // Live capture is brand green — the same colour as the pulse in the mark and
-    // the app-wide recording banner. Amber means paused. Red is only ever the
-    // stop control, so "stop" is the one destructive-looking thing on screen.
     final live = paused ? Nx.warning : Nx.accent;
 
-    // The WHOLE card is the primary control: tap anywhere to start, and tap
-    // anywhere to stop — so mid-visit the clinician never has to aim for a
-    // small button. The pause/stop buttons inside stay their own controls: a tap
-    // on one wins the gesture arena, so it pauses instead of stopping.
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: recording ? () => _stopFromCardTap(state) : _start,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 220),
-        padding: const EdgeInsets.fromLTRB(Nx.s6, Nx.s8, Nx.s6, Nx.s6),
+        padding: const EdgeInsets.fromLTRB(Nx.s6, Nx.s6, Nx.s6, Nx.s6),
         decoration: BoxDecoration(
           color: Nx.card,
           borderRadius: BorderRadius.circular(Nx.rXl),
           border: Border.all(
               color: recording ? live.withValues(alpha: 0.45) : Nx.border,
               width: recording ? 1.5 : 1),
-          boxShadow: Nx.cardShadow,
+          boxShadow: recording
+              ? [
+                  BoxShadow(
+                    color: live.withValues(alpha: 0.15),
+                    blurRadius: 24,
+                    offset: const Offset(0, 8),
+                  ),
+                  ...Nx.cardShadow,
+                ]
+              : Nx.cardShadow,
         ),
         child: Column(
           children: [
             if (recording)
               StatusPill(
-                label: paused ? 'PAUSED' : 'RECORDING',
+                label: paused ? 'PAUSED' : 'LIVE RECORDING',
                 color: live,
                 icon: paused ? Icons.pause : Icons.fiber_manual_record,
                 solid: true,
@@ -423,29 +415,31 @@ class _PatientVisitScreenState extends State<PatientVisitScreen>
             Text(
               recording ? _fmt(state.recordingSeconds * 1000) : '00:00',
               style: TextStyle(
-                fontSize: 56,
+                fontSize: 58,
                 height: 1,
-                fontWeight: FontWeight.w800,
+                fontWeight: FontWeight.w900,
                 letterSpacing: -2,
                 color: recording ? live : Nx.outline,
                 fontFeatures: const [FontFeature.tabularFigures()],
               ),
             ),
-            const SizedBox(height: Nx.s5),
-            // The waveform holds its slot whether or not capture is running, so
-            // starting a recording doesn't shove the controls down the screen.
+            const SizedBox(height: Nx.s4),
             SizedBox(
-              height: 82,
+              height: 84,
               child: recording
                   ? _waveform(state.recordingLevel, paused)
                   : _idleTrace(),
             ),
-            const SizedBox(height: Nx.s6),
+            if (recording && !paused) ...[
+              const SizedBox(height: Nx.s3),
+              _audioLevelMeter(state.recordingLevel),
+            ],
+            const SizedBox(height: Nx.s5),
             if (!recording)
               _circleButton(
                 color: Nx.accent,
                 icon: Icons.mic,
-                size: 44,
+                size: 48,
                 onTap: _start,
               )
             else
@@ -455,16 +449,19 @@ class _PatientVisitScreenState extends State<PatientVisitScreen>
                   _circleButton(
                     color: Nx.warning,
                     icon: paused ? Icons.play_arrow : Icons.pause,
-                    size: 32,
-                    onTap: () => paused
-                        ? state.resumeRecording()
-                        : state.pauseRecording(),
+                    size: 34,
+                    onTap: () {
+                      HapticFeedback.lightImpact();
+                      paused
+                          ? state.resumeRecording()
+                          : state.pauseRecording();
+                    },
                   ),
                   const SizedBox(width: Nx.s8),
                   _circleButton(
                     color: Nx.danger,
                     icon: Icons.stop,
-                    size: 40,
+                    size: 44,
                     onTap: _stopAndSubmit,
                   ),
                 ],
@@ -485,14 +482,47 @@ class _PatientVisitScreenState extends State<PatientVisitScreen>
     );
   }
 
+  Widget _audioLevelMeter(double level) {
+    final clamped = level.clamp(0.0, 1.0);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: Nx.s4),
+      child: Row(
+        children: [
+          const Icon(Icons.mic, size: 13, color: Nx.muted),
+          const SizedBox(width: 8),
+          Expanded(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(Nx.rPill),
+              child: SizedBox(
+                height: 4,
+                child: LinearProgressIndicator(
+                  value: 0.15 + 0.85 * clamped,
+                  backgroundColor: Nx.border,
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    clamped > 0.85 ? Nx.warning : Nx.accent,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            clamped > 0.05 ? 'Input active' : 'Listening',
+            style: const TextStyle(fontSize: 10.5, color: Nx.muted, fontWeight: FontWeight.w600),
+          ),
+        ],
+      ),
+    );
+  }
+
   /// Live, flowing waveform that mirrors around the centre line with a
   /// green→blue gradient across the bars — the brand pulse, animated. Bar
   /// heights respond to the microphone [level]; the motion comes from
   /// [_waveCtrl]. Dims when [paused].
   Widget _waveform(double level, bool paused) {
-    const bars = 30;
-    const maxH = 82.0;
-    final amp = paused ? 0.12 : (0.28 + 0.72 * level.clamp(0.0, 1.0));
+    const bars = 32;
+    const maxH = 84.0;
+    final amp = paused ? 0.10 : (0.25 + 0.75 * level.clamp(0.0, 1.0));
     return SizedBox(
       height: maxH,
       width: double.infinity,
@@ -500,8 +530,6 @@ class _PatientVisitScreenState extends State<PatientVisitScreen>
         animation: _waveCtrl,
         builder: (context, _) {
           final phase = _waveCtrl.value * 2 * math.pi;
-          // Scale the bar row down if it would be wider than the card, so it
-          // never overflows on a narrow screen.
           return FittedBox(
             fit: BoxFit.scaleDown,
             child: Row(
