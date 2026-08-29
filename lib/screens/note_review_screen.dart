@@ -300,21 +300,7 @@ class _NoteReviewScreenState extends State<NoteReviewScreen> {
   // --- Non-note states ----------------------------------------------------
 
   Widget _spinnerState(String message) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(Nx.s8),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const CircularProgressIndicator(color: Nx.primary),
-            const SizedBox(height: Nx.s5),
-            Text(message,
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: Nx.secondary)),
-          ],
-        ),
-      ),
-    );
+    return const NxNoteSkeleton();
   }
 
   Widget _loadFailedState() {

@@ -8,9 +8,12 @@ import 'api_client.dart';
 import 'backend.dart';
 import 'clinical_models.dart';
 
-/// Live backend wired to the **confirmed** Anot Health REST API (probed against
-/// the production CloudFront deployment, and cross-checked against the backend
-/// source in `anot-backend-main`).
+/// Live backend for the Notenra REST API.
+///
+/// The contract below is the one this client actually speaks, confirmed
+/// empirically against a running server — so it doubles as the spec any
+/// replacement server must satisfy. If a server diverges, the fix is a second
+/// [ApiBackend] implementation, not edits scattered through this one.
 ///
 /// Contract summary (clinician role, `Authorization: Bearer <jwt>`):
 ///   GET    /visits                       -> { visits: [VISIT] }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
@@ -45,6 +46,19 @@ class TodayScreen extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: Nx.canvas,
+      floatingActionButton: FloatingActionButton.extended(
+        backgroundColor: Nx.primary,
+        foregroundColor: Colors.white,
+        elevation: 4,
+        icon: const Icon(Icons.person_add_alt, size: 20),
+        label: const Text('Add patient',
+            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5)),
+        onPressed: () {
+          HapticFeedback.selectionClick();
+          Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const AddPatientScreen()));
+        },
+      ),
       body: Column(
         children: [
           _header(context, state, svc, recorded, today.length, awaiting.length),
@@ -55,7 +69,7 @@ class TodayScreen extends StatelessWidget {
                 await state.refreshPatients();
               },
               child: ListView(
-                padding: const EdgeInsets.fromLTRB(Nx.s4, 0, Nx.s4, Nx.s8),
+                padding: const EdgeInsets.fromLTRB(Nx.s4, 0, Nx.s4, 96),
                 children: [
                   _banners(context, state, svc),
                   const SizedBox(height: Nx.s4),
@@ -468,72 +482,190 @@ class TodayScreen extends StatelessWidget {
       ];
     }
 
-    return [
-      for (final p in rest)
-        Padding(
-          padding: const EdgeInsets.only(bottom: Nx.s2),
-          child: Pressable(child: _upcomingRow(context, svc, p)),
-        ),
-    ];
+    final nowMillis = DateTime.now().millisecondsSinceEpoch;
+    final widgets = <Widget>[];
+    bool markerAdded = false;
+
+    for (int i = 0; i < rest.length; i++) {
+      final p = rest[i];
+      final pTime = _encounterMillis(p, svc);
+      if (!markerAdded && pTime >= nowMillis) {
+        widgets.add(_nowMarker());
+        markerAdded = true;
+      }
+      widgets.add(Padding(
+        padding: const EdgeInsets.only(bottom: Nx.s2),
+        child: Pressable(child: _upcomingRow(context, svc, p)),
+      ));
+    }
+    if (!markerAdded && rest.isNotEmpty) {
+      widgets.insert(0, _nowMarker());
+    }
+
+    return widgets;
+  }
+
+  Widget _nowMarker() {
+    final timeStr = DateFormat('h:mm a').format(DateTime.now());
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: Nx.s2),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: Nx.accent,
+              borderRadius: BorderRadius.circular(Nx.rPill),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 6,
+                  height: 6,
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 5),
+                Text(
+                  'NOW · $timeStr',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Container(
+              height: 1.5,
+              decoration: BoxDecoration(
+                color: Nx.accent.withValues(alpha: 0.4),
+                borderRadius: BorderRadius.circular(1),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _upcomingRow(BuildContext context, ClinicalService svc, Patient p) {
     final dt = DateTime.fromMillisecondsSinceEpoch(_encounterMillis(p, svc));
     final visitType = _visitTypeOf(p, svc);
-    return NxCard(
-      padding: const EdgeInsets.symmetric(horizontal: Nx.s3, vertical: Nx.s3),
-      onTap: () => _openPatient(context, p.id),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 46,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(DateFormat('h:mm').format(dt),
-                    style: const TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 13,
-                        color: Nx.ink,
-                        fontFeatures: [FontFeature.tabularFigures()])),
-                Text(DateFormat('a').format(dt),
-                    style: const TextStyle(fontSize: 10, color: Nx.muted)),
-              ],
+    return Dismissible(
+      key: ValueKey('patient_swipe_${p.id}'),
+      direction: DismissDirection.horizontal,
+      confirmDismiss: (dir) async {
+        if (dir == DismissDirection.startToEnd) {
+          HapticFeedback.mediumImpact();
+          _openPatient(context, p.id, record: true);
+        } else if (dir == DismissDirection.endToStart) {
+          HapticFeedback.lightImpact();
+          _openPatient(context, p.id, record: false);
+        }
+        return false;
+      },
+      background: Container(
+        alignment: Alignment.centerLeft,
+        padding: const EdgeInsets.only(left: 20),
+        decoration: BoxDecoration(
+          color: Nx.accent,
+          borderRadius: BorderRadius.circular(Nx.rLg),
+        ),
+        child: const Row(
+          children: [
+            Icon(Icons.mic, color: Colors.white, size: 22),
+            SizedBox(width: 8),
+            Text('Record',
+                style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 13)),
+          ],
+        ),
+      ),
+      secondaryBackground: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 20),
+        decoration: BoxDecoration(
+          color: Nx.primary,
+          borderRadius: BorderRadius.circular(Nx.rLg),
+        ),
+        child: const Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            Text('Details',
+                style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 13)),
+            SizedBox(width: 8),
+            Icon(Icons.info_outline, color: Colors.white, size: 22),
+          ],
+        ),
+      ),
+      child: NxCard(
+        padding: const EdgeInsets.symmetric(horizontal: Nx.s3, vertical: Nx.s3),
+        onTap: () => _openPatient(context, p.id),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 46,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(DateFormat('h:mm').format(dt),
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 13,
+                          color: Nx.ink,
+                          fontFeatures: [FontFeature.tabularFigures()])),
+                  Text(DateFormat('a').format(dt),
+                      style: const TextStyle(fontSize: 10, color: Nx.muted)),
+                ],
+              ),
             ),
-          ),
-          NxAvatar(name: p.name, radius: 16),
-          const SizedBox(width: Nx.s3),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(p.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        color: Nx.ink,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 14)),
-                const SizedBox(height: 2),
-                Text(
-                    visitType.isEmpty ? 'MRN ${p.mrn}' : 'MRN ${p.mrn}  ·  $visitType',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: Nx.muted, fontSize: 11.5)),
-              ],
+            NxAvatar(name: p.name, radius: 16),
+            const SizedBox(width: Nx.s3),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(p.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          color: Nx.ink,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14)),
+                  const SizedBox(height: 2),
+                  Text(
+                      visitType.isEmpty ? 'MRN ${p.mrn}' : 'MRN ${p.mrn}  ·  $visitType',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: Nx.muted, fontSize: 11.5)),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(width: Nx.s2),
-          NxPillButton(
-            label: 'Record',
-            icon: Icons.mic,
-            color: Nx.primary,
-            tonal: true,
-            onTap: () => _openPatient(context, p.id, record: true),
-          ),
-        ],
+            const SizedBox(width: Nx.s2),
+            NxPillButton(
+              label: 'Record',
+              icon: Icons.mic,
+              color: Nx.primary,
+              tonal: true,
+              onTap: () => _openPatient(context, p.id, record: true),
+            ),
+          ],
+        ),
       ),
     );
   }

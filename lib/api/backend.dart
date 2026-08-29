@@ -5,7 +5,7 @@ import 'clinical_models.dart';
 /// Two implementations live behind this interface:
 ///   * [MockBackend]  — local, fully offline demo data (default until a live
 ///     server URL + credentials are configured).
-///   * LiveBackend    — wired to the documented Anot Health REST API.
+///   * LiveBackend    — wired to the documented Notenra REST API.
 ///
 /// Swapping between them is a one-line change in the service layer, so building
 /// against the mock now requires zero rework when the live API is connected.

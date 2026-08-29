@@ -18,7 +18,7 @@ class ApiException implements Exception {
   String toString() => 'ApiException(${statusCode ?? '-'}): $message';
 }
 
-/// Single Dio instance for the Anot Health backend.
+/// Single Dio instance for the Notenra backend.
 ///
 /// Deliberately simple and predictable:
 ///   • attaches the JWT on every request,
@@ -52,39 +52,74 @@ class ApiClient {
   // something else would otherwise mean login falls back to the body token (and
   // fails outright if there isn't one), and any mid-session cookie rotation
   // would be missed, expiring the session during a visit.
-  static const sessionCookieName =
-      String.fromEnvironment('SESSION_COOKIE_NAME', defaultValue: 'anot_session');
+  static const sessionCookieName = String.fromEnvironment(
+      'SESSION_COOKIE_NAME',
+      defaultValue: 'notenra_session');
 
-  static final RegExp _sessionCookieRe = RegExp(
-      '(?:__Host-|__Secure-)?(?:${RegExp.escape(sessionCookieName)}|notenra_session|anot_session)=([^;]+)');
+  /// Exact match on the configured name, with the optional cookie-prefix forms.
+  static final RegExp _exactSessionRe =
+      RegExp('(?:__Host-|__Secure-)?${RegExp.escape(sessionCookieName)}=([^;]+)');
+
+  /// Fallback for a server whose cookie name we weren't told: any cookie whose
+  /// name ends in `session`, which is the near-universal convention
+  /// (`<brand>_session`, `session`, `sid_session`).
+  ///
+  /// Tried only after [_exactSessionRe] fails, so a correct
+  /// `SESSION_COOKIE_NAME` define is never second-guessed. This is deliberately
+  /// a name convention rather than a list of known names — the app should keep
+  /// working against a renamed backend instead of silently dropping the JWT, and
+  /// no cookie the API actually sets (`csrf_token`) matches it.
+  static final RegExp _looseSessionRe = RegExp(
+      r'(?:__Host-|__Secure-)?[A-Za-z0-9_.\-]*session=([^;]+)',
+      caseSensitive: false);
 
   /// Pull the session JWT out of a response's Set-Cookie header(s), if present.
   /// Matches the bare cookie name and the `__Host-` / `__Secure-` prefixed forms.
   static String? sessionJwtFromHeaders(Headers headers) {
     final cookies = headers.map['set-cookie'];
-    if (cookies == null) return null;
+    if (cookies == null || cookies.isEmpty) return null;
+
     for (final c in cookies) {
-      final m = _sessionCookieRe.firstMatch(c);
-      final jwt = m?.group(1);
+      final jwt = _exactSessionRe.firstMatch(c)?.group(1);
       if (jwt != null && jwt.isNotEmpty) return jwt;
     }
-    // Set-Cookie present but none matched: possibly a server whose session
-    // cookie is named something other than [sessionCookieName]. Log it ONCE per
-    // run — most responses legitimately carry only the CSRF cookie, so logging
-    // every time would bury the signal. Cookie names only, never values.
-    if (cookies.isNotEmpty && !_warnedNoSessionCookie) {
+    // No cookie by the configured name. Accept a conventionally-named one, but
+    // say so once per run: the define is wrong and should be corrected, even
+    // though the session works.
+    for (final c in cookies) {
+      final jwt = _looseSessionRe.firstMatch(c)?.group(1);
+      if (jwt != null && jwt.isNotEmpty) {
+        if (!_warnedNoSessionCookie) {
+          _warnedNoSessionCookie = true;
+          AppLog.log(
+              'AUTH',
+              'session cookie is not "$sessionCookieName" — matched by '
+                  'convention instead. Set --dart-define=SESSION_COOKIE_NAME '
+                  'to the real name. Cookies seen: ${_names(cookies)}');
+        }
+        return jwt;
+      }
+    }
+    // Set-Cookie present but nothing session-shaped: usually just the CSRF
+    // cookie, which is normal — so log ONCE per run or the signal is buried.
+    // Cookie names only, never values.
+    if (!_warnedNoSessionCookie) {
       _warnedNoSessionCookie = true;
-      final names = cookies
-          .map((c) => c.split('=').first.trim())
-          .where((n) => n.isNotEmpty)
-          .join(', ');
       AppLog.log(
           'AUTH',
-          'no "$sessionCookieName" cookie seen yet; first response carried: '
-              '$names — if sign-in fails, check the SESSION_COOKIE_NAME define');
+          'no session cookie seen yet; first response carried: '
+              '${_names(cookies)} — if sign-in fails, check the '
+              'SESSION_COOKIE_NAME define');
     }
     return null;
   }
+
+  /// Cookie names from Set-Cookie headers, for diagnostics. Names only — a
+  /// logged session value would be a credential in a log file.
+  static String _names(List<String> cookies) => cookies
+      .map((c) => c.split('=').first.trim())
+      .where((n) => n.isNotEmpty)
+      .join(', ');
 
   static bool _warnedNoSessionCookie = false;
 

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../app_state.dart';
@@ -118,6 +119,7 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final live = context.watch<ClinicalService>().isLive;
+    final state = context.watch<AppState>();
     return Scaffold(
       backgroundColor: Nx.canvas,
       body: Stack(
@@ -208,6 +210,10 @@ class _LoginScreenState extends State<LoginScreen> {
                           _rememberEmailToggle(),
                           const SizedBox(height: 16),
                           Pressable(child: _signInButton()),
+                          if (state.biometricAvailable && _userCtrl.text.isNotEmpty) ...[
+                            const SizedBox(height: 10),
+                            _biometricQuickButton(state),
+                          ],
                         ],
                       ),
                     ),
@@ -353,6 +359,25 @@ class _LoginScreenState extends State<LoginScreen> {
           Expanded(child: child),
         ],
       ),
+    );
+  }
+
+  Widget _biometricQuickButton(AppState state) {
+    return OutlinedButton.icon(
+      style: OutlinedButton.styleFrom(
+        foregroundColor: Nx.primary,
+        side: BorderSide(color: Nx.primary.withValues(alpha: 0.45)),
+        minimumSize: const Size(0, 48),
+      ),
+      onPressed: _busy
+          ? null
+          : () async {
+              HapticFeedback.selectionClick();
+              await state.unlockVault();
+            },
+      icon: const Icon(Icons.fingerprint, size: 22),
+      label: const Text('Unlock with Biometrics',
+          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5)),
     );
   }
 

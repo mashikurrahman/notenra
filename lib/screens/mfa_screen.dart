@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../app_state.dart';
 import '../logo.dart';
 import '../theme.dart';
+import '../widgets/nx.dart';
 
 /// First-time MFA (TOTP) enrollment. The server mandates an authenticator-app
 /// second factor for PHI access. We fetch the secret + QR, the clinician adds
@@ -31,7 +32,20 @@ class _MfaEnrollmentScreenState extends State<MfaEnrollmentScreen> {
   void initState() {
     super.initState();
     _codeCtrl.addListener(() => setState(() {}));
-    WidgetsBinding.instance.addPostFrameCallback((_) => _loadSetup());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadSetup();
+      _checkClipboard();
+    });
+  }
+
+  Future<void> _checkClipboard() async {
+    try {
+      final data = await Clipboard.getData(Clipboard.kTextPlain);
+      final text = data?.text?.trim() ?? '';
+      if (RegExp(r'^\d{6}$').hasMatch(text) && mounted && _codeCtrl.text.isEmpty) {
+        _codeCtrl.text = text;
+      }
+    } catch (_) {}
   }
 
   @override
@@ -173,8 +187,6 @@ class _MfaEnrollmentScreenState extends State<MfaEnrollmentScreen> {
                   ? Image.memory(_qrBytes!,
                       width: 220,
                       height: 220,
-                      // Nearest-neighbour keeps the QR's square modules crisp;
-                      // the default smoothing blurs them and breaks scanning.
                       filterQuality: FilterQuality.none,
                       gaplessPlayback: true,
                       fit: BoxFit.contain)
@@ -196,7 +208,7 @@ class _MfaEnrollmentScreenState extends State<MfaEnrollmentScreen> {
           Text('2. Enter the 6-digit code your app shows.',
               style: TextStyle(color: Nx.muted, fontSize: 13, height: 1.4)),
           const SizedBox(height: 12),
-          _codeField(),
+          NxPinInput(controller: _codeCtrl, onSubmit: _verify),
           const SizedBox(height: 20),
           _verifyButton(),
         ],
@@ -314,8 +326,6 @@ class _MfaEnrollmentScreenState extends State<MfaEnrollmentScreen> {
     );
   }
 
-  Widget _codeField() => _MfaCodeField(controller: _codeCtrl, onSubmit: _verify);
-
   Widget _verifyButton() {
     final enabled = _codeValid && !_verifying;
     return SizedBox(
@@ -361,6 +371,17 @@ class _MfaChallengeScreenState extends State<MfaChallengeScreen> {
   void initState() {
     super.initState();
     _codeCtrl.addListener(() => setState(() {}));
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkClipboard());
+  }
+
+  Future<void> _checkClipboard() async {
+    try {
+      final data = await Clipboard.getData(Clipboard.kTextPlain);
+      final text = data?.text?.trim() ?? '';
+      if (RegExp(r'^\d{6}$').hasMatch(text) && mounted && _codeCtrl.text.isEmpty) {
+        _codeCtrl.text = text;
+      }
+    } catch (_) {}
   }
 
   @override
@@ -442,7 +463,7 @@ class _MfaChallengeScreenState extends State<MfaChallengeScreen> {
                           style:
                               TextStyle(color: Nx.muted, fontSize: 13)),
                       const SizedBox(height: 20),
-                      _MfaCodeField(controller: _codeCtrl, onSubmit: _verify),
+                      NxPinInput(controller: _codeCtrl, onSubmit: _verify),
                       const SizedBox(height: 20),
                       SizedBox(
                         height: 52,
@@ -481,44 +502,3 @@ class _MfaChallengeScreenState extends State<MfaChallengeScreen> {
   }
 }
 
-/// Shared 6-digit numeric code input.
-class _MfaCodeField extends StatelessWidget {
-  final TextEditingController controller;
-  final VoidCallback onSubmit;
-  const _MfaCodeField({required this.controller, required this.onSubmit});
-
-  @override
-  Widget build(BuildContext context) {
-    return TextField(
-      controller: controller,
-      autofocus: true,
-      keyboardType: TextInputType.number,
-      textAlign: TextAlign.center,
-      maxLength: 6,
-      onSubmitted: (_) => onSubmit(),
-      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-      style: const TextStyle(
-          color: Nx.ink,
-          fontSize: 26,
-          fontWeight: FontWeight.bold,
-          letterSpacing: 10),
-      decoration: InputDecoration(
-        counterText: '',
-        hintText: '••••••',
-        hintStyle: TextStyle(
-            color: Nx.muted.withValues(alpha: 0.4), letterSpacing: 10),
-        filled: true,
-        fillColor: Nx.surface,
-        border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: Nx.border)),
-        enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: Nx.border)),
-        focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: Nx.primary, width: 1.5)),
-      ),
-    );
-  }
-}

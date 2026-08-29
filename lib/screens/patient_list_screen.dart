@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
@@ -84,6 +85,13 @@ class _PatientListScreenState extends State<PatientListScreen> {
     return p.lastContactDate;
   }
 
+  int _countOnDay(AppState state, ClinicalService svc, DateTime day) {
+    return state.visiblePatients
+        .where((p) => _sameDay(
+            DateTime.fromMillisecondsSinceEpoch(_encounterMillis(p, svc)), day))
+        .length;
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
@@ -167,7 +175,7 @@ class _PatientListScreenState extends State<PatientListScreen> {
         children: [
           _searchField(state),
           const SizedBox(height: Nx.s3),
-          _weekStrip(),
+          _weekStrip(state, svc),
         ],
       ),
     );
@@ -205,33 +213,39 @@ class _PatientListScreenState extends State<PatientListScreen> {
     );
   }
 
-  Widget _weekStrip() {
+  Widget _weekStrip(AppState state, ClinicalService svc) {
     final start = DateTime.now().subtract(const Duration(days: 3));
     final base = DateTime(start.year, start.month, start.day);
     final days = List.generate(21, (i) => base.add(Duration(days: i)));
     return SizedBox(
-      height: 62,
+      height: 64,
       child: SingleChildScrollView(
         controller: _weekScroll,
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: Nx.s3),
-        child: Row(children: [for (final d in days) _dayChip(d)]),
+        child: Row(children: [
+          for (final d in days) _dayChip(d, _countOnDay(state, svc, d)),
+        ]),
       ),
     );
   }
 
   /// Day chips read as part of the brand panel: translucent white on the
   /// gradient, inverting to solid white for the selected day.
-  Widget _dayChip(DateTime day) {
+  Widget _dayChip(DateTime day, int count) {
     final isToday = _sameDay(day, DateTime.now());
     final selected = _sameDay(day, _selectedDay);
+    final dotCount = count == 0 ? 0 : (count <= 2 ? 1 : (count <= 5 ? 2 : 3));
     return GestureDetector(
-      onTap: () => setState(() => _selectedDay = day),
+      onTap: () {
+        HapticFeedback.selectionClick();
+        setState(() => _selectedDay = day);
+      },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 160),
         width: 52,
         margin: const EdgeInsets.symmetric(horizontal: 4),
-        padding: const EdgeInsets.symmetric(vertical: 7),
+        padding: const EdgeInsets.symmetric(vertical: 6),
         decoration: BoxDecoration(
           color: selected ? Colors.white : Colors.white.withValues(alpha: 0.14),
           borderRadius: BorderRadius.circular(Nx.rSm),
@@ -253,10 +267,34 @@ class _PatientListScreenState extends State<PatientListScreen> {
             const SizedBox(height: 2),
             Text('${day.day}',
                 style: TextStyle(
-                    fontSize: 17,
+                    fontSize: 16.5,
                     height: 1.1,
                     fontWeight: FontWeight.w800,
                     color: selected ? Nx.ink : Colors.white)),
+            const SizedBox(height: 2),
+            // Density indicator dots
+            SizedBox(
+              height: 4,
+              child: dotCount == 0
+                  ? const SizedBox.shrink()
+                  : Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: List.generate(
+                        dotCount,
+                        (i) => Container(
+                          width: 3.5,
+                          height: 3.5,
+                          margin: const EdgeInsets.symmetric(horizontal: 1),
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: selected
+                                ? Nx.accent
+                                : Colors.white.withValues(alpha: 0.85),
+                          ),
+                        ),
+                      ),
+                    ),
+            ),
             const SizedBox(height: 2),
             // Underline marks today; it turns green once today is selected.
             Container(

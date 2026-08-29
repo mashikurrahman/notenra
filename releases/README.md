@@ -4,22 +4,25 @@ Two folders, one rule.
 
 > **Fresh version history.** Notenra ships under a new application id
 > (`com.notenra.notenra`), so the stores see a brand-new app and versioning
-> restarts at `1.0.0+1`. The release history of the predecessor app
-> (`com.anothealth.anot_scribe`, up to `1.2.2+5`) lives in that project and is
-> **not** carried over here — its build artifacts are not interchangeable with
-> these, and neither store will accept them under the new id.
+> restarts at `1.0.0+1`. The release history of the predecessor app (up to
+> `1.2.2+5`) lives in that project and is **not** carried over here — its build
+> artifacts are not interchangeable with these, and neither store will accept
+> them under the new id.
 
 ## `stable/` — PRODUCTION. Locked. Do not overwrite.
 The known-good build approved for production. Nothing changes here unless the
 **user explicitly says "update the stable version."**
 
-- _(no stable build yet — the first Notenra release will be
-  `Notenra-stable-v1.0.0.apk` / `.aab`, app version `1.0.0+1`)_
+- **Notenra-stable-v1.0.1+2.aab** (65.8 MB, version `1.0.1+2`, versionCode: `2`, built Aug 29, 2026)
+  - Full UI Ergonomics (Today floating quick-add, "Now" live timeline marker, swipe-to-record/details gestures, schedule density dots).
+  - MFA discrete 6-box PIN input with auto-paste.
+  - Neutral shimmer skeleton loaders and scribe turnaround SLA badges.
+  - Signed with production upload key (`upload-keystore.jks`).
 
 ## `dev/` — work in progress.
 Every new change is built here first. NOT production until promoted.
 
-- _(no dev build yet)_
+- **Notenra-dev-v1.0.1+2.aab** (version `1.0.1+2`, versionCode: `2`)
 
 ## Promotion rule
 When the user says **"update the stable version"**, copy the chosen `dev/` APK

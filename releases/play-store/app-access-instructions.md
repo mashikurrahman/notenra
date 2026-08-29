@@ -39,7 +39,7 @@ demo account that contains only fake patients. Two options:
 Send the developer/admin this request:
 
 > "Please create a dedicated **demo clinician account** on the production server for
-> the Google Play review — role `clinician`, e.g. `demo@anot.health`, with a fixed
+> the Google Play review — role `clinician`, e.g. `demo@notenra.com`, with a fixed
 > password, **MFA disabled**, and **first-login forced-password-change turned OFF**
 > (so the reviewer isn't forced to change it). It should be isolated from any real
 > clinic and contain only test patients."
@@ -48,13 +48,20 @@ The two "off" flags matter: if the account forces a password change or an MFA
 enrollment on first login, the reviewer gets stuck. Confirm the account logs
 straight into the main app.
 
-### Option 2 — reuse the existing seeded test clinician
-`nahid@anot.health` already has ~240 **fictitious** patients/visits (seeded earlier
-for testing). It can serve as the demo account **if** it is confirmed to have:
-- role `clinician`, MFA off, no forced password change on login, and
-- no real patient data.
+### Option 2 — seed a test clinician yourself
+Once the demo account exists but is empty, give it fictitious patients with
+`tool/seed_patients.js`, which creates patients **and** their scheduled visits
+(a patient with no visit row is invisible to the clinician):
 
-If you use it, put its email + password into the App access fields above.
+```bash
+node tool/seed_patients.js --base https://app.notenra.com/api --email <demo> --password <pw> --confirm
+```
+
+Seeded rows carry a `ZZTest` name/MRN prefix so they are identifiable and
+removable later; every created id is appended to `tool/seeded-patients.log`.
+
+Whichever option you use, put the account's email + password into the App access
+fields above, and confirm it holds **no real patient data**.
 
 ---
 

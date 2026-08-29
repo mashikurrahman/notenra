@@ -403,9 +403,9 @@ class _PhiTrainingScreenState extends State<PhiTrainingScreen> {
                           'changed by someone who shouldn\'t have access. '),
                       _b("Act fast and don't investigate alone:"),
                       _t(' report it immediately to '),
-                      _b('support@anot.health'),
+                      _b('support@notenra.com'),
                       _t(' (and '),
-                      _b('admin@anot.health'),
+                      _b('admin@notenra.com'),
                       _t(' for anything urgent). Don\'t try to fix it quietly, '
                           'write down what you saw, and preserve evidence. '
                           'Reporting in good faith is always the right call.'),

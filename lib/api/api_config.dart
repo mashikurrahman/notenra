@@ -22,11 +22,11 @@ class ApiConfig {
   static const _secure = SecureStore();
   static const _key = 'api_base_url';
 
-  /// Compile-time default. Falls back to the Anot Health production API when no
-  /// `API_BASE_URL` define is passed, so existing builds are unaffected.
+  /// Compile-time default: the Notenra production API. Overridable per build
+  /// with `--dart-define=API_BASE_URL=…` for staging.
   static const defaultBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'https://app.anot.health/api',
+    defaultValue: 'https://app.notenra.com/api',
   );
 
   static String _baseUrl = defaultBaseUrl;

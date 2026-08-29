@@ -5,9 +5,12 @@ record a consultation, a scribe writes the note, the clinician reviews, edits or
 approves it. Flutter, Android + iOS.
 
 - Android application id / iOS bundle id: `com.notenra.notenra`
-- Backend: the Anot Health REST API (`https://app.anot.health/api` by default —
-  see `lib/api/api_config.dart`). The **backend is unchanged**; only the app's
-  own identity was rebranded.
+- Backend: the Notenra REST API — `https://app.notenra.com/api` by default. The
+  address is a build-time define, not a code constant, so a build can be pointed
+  at staging without a source change:
+  `--dart-define=API_BASE_URL=https://staging.example.com/api`. See
+  `lib/api/api_config.dart`. The route contract the server must satisfy is
+  documented in `lib/api/live_backend.dart`.
 
 ## App structure
 

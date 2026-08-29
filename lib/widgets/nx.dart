@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../theme.dart';
 
@@ -54,7 +55,7 @@ class SectionHeader extends StatelessWidget {
             ),
           ],
           const Spacer(),
-          ?trailing,
+          if (trailing != null) trailing!,
         ],
       ),
     );
@@ -351,6 +352,291 @@ class NxAvatar extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// A fluid shimmer animation wrapper used for placeholder loading states.
+/// Completely neutral and free of PHI.
+class NxShimmer extends StatefulWidget {
+  final Widget child;
+  const NxShimmer({super.key, required this.child});
+
+  @override
+  State<NxShimmer> createState() => _NxShimmerState();
+}
+
+class _NxShimmerState extends State<NxShimmer>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1400),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (context, child) {
+        return ShaderMask(
+          shaderCallback: (bounds) {
+            return LinearGradient(
+              begin: const Alignment(-1.0, -0.3),
+              end: const Alignment(1.0, 0.3),
+              stops: const [0.1, 0.5, 0.9],
+              colors: [
+                Nx.surface,
+                Colors.white.withValues(alpha: 0.85),
+                Nx.surface,
+              ],
+              transform: _SlidingGradientTransform(slidePercent: _ctrl.value),
+            ).createShader(bounds);
+          },
+          blendMode: BlendMode.srcATop,
+          child: child,
+        );
+      },
+      child: widget.child,
+    );
+  }
+}
+
+class _SlidingGradientTransform extends GradientTransform {
+  final double slidePercent;
+  const _SlidingGradientTransform({required this.slidePercent});
+
+  @override
+  Matrix4? transform(Rect bounds, {TextDirection? textDirection}) {
+    return Matrix4.translationValues(bounds.width * (slidePercent * 2 - 1), 0.0, 0.0);
+  }
+}
+
+/// Rounded skeleton box placeholder with subtle surface styling.
+class NxSkeletonBox extends StatelessWidget {
+  final double? width;
+  final double height;
+  final double radius;
+  final EdgeInsets margin;
+
+  const NxSkeletonBox({
+    super.key,
+    this.width,
+    required this.height,
+    this.radius = Nx.rSm,
+    this.margin = EdgeInsets.zero,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: width,
+      height: height,
+      margin: margin,
+      decoration: BoxDecoration(
+        color: Nx.surface,
+        borderRadius: BorderRadius.circular(radius),
+      ),
+    );
+  }
+}
+
+/// Structured skeleton placeholder for the Note Review screen.
+class NxNoteSkeleton extends StatelessWidget {
+  const NxNoteSkeleton({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return NxShimmer(
+      child: Padding(
+        padding: const EdgeInsets.all(Nx.s4),
+        child: Column(
+          children: [
+            NxCard(
+              padding: const EdgeInsets.all(Nx.s5),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const NxSkeletonBox(width: 24, height: 24, radius: 6),
+                      const SizedBox(width: Nx.s3),
+                      const NxSkeletonBox(width: 140, height: 18),
+                      const Spacer(),
+                      NxSkeletonBox(width: 48, height: 20, radius: Nx.rPill),
+                    ],
+                  ),
+                  const SizedBox(height: Nx.s5),
+                  const NxSkeletonBox(height: 1),
+                  const SizedBox(height: Nx.s5),
+                  // Subjective block
+                  const NxSkeletonBox(width: 100, height: 14),
+                  const SizedBox(height: Nx.s2),
+                  const NxSkeletonBox(width: double.infinity, height: 14),
+                  const SizedBox(height: Nx.s2),
+                  const NxSkeletonBox(width: 220, height: 14),
+                  const SizedBox(height: Nx.s5),
+                  // Objective block
+                  const NxSkeletonBox(width: 90, height: 14),
+                  const SizedBox(height: Nx.s2),
+                  const NxSkeletonBox(width: double.infinity, height: 14),
+                  const SizedBox(height: Nx.s2),
+                  const NxSkeletonBox(width: 260, height: 14),
+                  const SizedBox(height: Nx.s5),
+                  // Assessment & Plan block
+                  const NxSkeletonBox(width: 130, height: 14),
+                  const SizedBox(height: Nx.s2),
+                  const NxSkeletonBox(width: double.infinity, height: 14),
+                  const SizedBox(height: Nx.s2),
+                  const NxSkeletonBox(width: 180, height: 14),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 6-cell animated discrete digit PIN input with auto-advance, auto-paste,
+/// smooth cursor highlight, and haptic feedback on entry.
+class NxPinInput extends StatefulWidget {
+  final TextEditingController controller;
+  final VoidCallback? onSubmit;
+  final ValueChanged<String>? onChanged;
+  final int length;
+  final bool autofocus;
+
+  const NxPinInput({
+    super.key,
+    required this.controller,
+    this.onSubmit,
+    this.onChanged,
+    this.length = 6,
+    this.autofocus = true,
+  });
+
+  @override
+  State<NxPinInput> createState() => _NxPinInputState();
+}
+
+class _NxPinInputState extends State<NxPinInput> {
+  late final FocusNode _focusNode;
+
+  @override
+  void initState() {
+    super.initState();
+    _focusNode = FocusNode();
+    widget.controller.addListener(_handleTextChange);
+  }
+
+  void _handleTextChange() {
+    if (mounted) setState(() {});
+    widget.onChanged?.call(widget.controller.text);
+    if (widget.controller.text.trim().length == widget.length) {
+      HapticFeedback.mediumImpact();
+      widget.onSubmit?.call();
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_handleTextChange);
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final text = widget.controller.text;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () {
+        if (!_focusNode.hasFocus) {
+          _focusNode.requestFocus();
+        }
+      },
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          // Hidden actual input to capture soft keyboard, paste, and accessibility events
+          Opacity(
+            opacity: 0.0,
+            child: SizedBox(
+              width: double.infinity,
+              height: 56,
+              child: TextField(
+                controller: widget.controller,
+                focusNode: _focusNode,
+                autofocus: widget.autofocus,
+                keyboardType: TextInputType.number,
+                maxLength: widget.length,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                enableSuggestions: false,
+                autocorrect: false,
+                decoration: const InputDecoration(
+                  counterText: '',
+                  border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                ),
+              ),
+            ),
+          ),
+          // Visible 6-cell design
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: List.generate(widget.length, (i) {
+              final isFilled = i < text.length;
+              final isFocused = _focusNode.hasFocus && i == text.length;
+              final digit = isFilled ? text[i] : '';
+
+              return AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                width: 48,
+                height: 56,
+                decoration: BoxDecoration(
+                  color: isFilled ? Nx.card : Nx.surface,
+                  borderRadius: BorderRadius.circular(Nx.rSm),
+                  border: Border.all(
+                    color: isFocused
+                        ? Nx.primary
+                        : (isFilled
+                            ? Nx.primary.withValues(alpha: 0.45)
+                            : Nx.border),
+                    width: isFocused ? 2.0 : 1.2,
+                  ),
+                  boxShadow: isFocused
+                      ? [
+                          BoxShadow(
+                            color: Nx.primary.withValues(alpha: 0.20),
+                            blurRadius: 10,
+                            offset: const Offset(0, 3),
+                          )
+                        ]
+                      : null,
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  digit,
+                  style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
+                    color: Nx.ink,
+                    fontFeatures: [FontFeature.tabularFigures()],
+                  ),
+                ),
+              );
+            }),
+          ),
+        ],
+      ),
     );
   }
 }

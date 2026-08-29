@@ -386,7 +386,15 @@ class _ReviewQueueScreenState extends State<ReviewQueueScreen> {
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(color: Nx.muted, fontSize: 11.5)),
                   const SizedBox(height: 6),
-                  StatusPill(label: s.label, color: s.color, icon: s.icon),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      StatusPill(label: s.label, color: s.color, icon: s.icon),
+                      if (_turnaroundPill(v) != null) _turnaroundPill(v)!,
+                    ],
+                  ),
                 ],
               ),
             ),
@@ -397,6 +405,30 @@ class _ReviewQueueScreenState extends State<ReviewQueueScreen> {
         ),
       ),
     );
+  }
+
+  Widget? _turnaroundPill(Visit v) {
+    if (v.status == VisitStatus.readyForReview) {
+      final elapsed = DateTime.now().millisecondsSinceEpoch - v.createdAt;
+      if (elapsed > 0) {
+        final mins = elapsed ~/ 60000;
+        final label = mins < 1
+            ? 'Just ready'
+            : (mins < 60 ? 'Ready ${mins}m ago' : 'Ready ${mins ~/ 60}h ago');
+        return StatusPill(
+          label: label,
+          color: Nx.accent,
+          icon: Icons.bolt,
+        );
+      }
+    } else if (v.status == VisitStatus.withScribe) {
+      return const StatusPill(
+        label: 'Scribe processing',
+        color: Nx.warning,
+        icon: Icons.hourglass_top,
+      );
+    }
+    return null;
   }
 
   // --- Stage / date presentation -----------------------------------------

@@ -1,10 +1,9 @@
-// Unit tests for the domain models. (The previous "smoke test" pumped the full
-// NotenraApp without its providers and always threw; these are pure-Dart tests that
-// actually run and cover the patient/visit fields the schedule view depends on.)
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:notenra/models.dart';
 import 'package:notenra/api/clinical_models.dart';
+import 'package:notenra/widgets/nx.dart';
 
 void main() {
   group('Patient.copyWith', () {
@@ -60,6 +59,51 @@ void main() {
       final v = Visit.fromJson({'id': 'v2', 'patient_id': 1});
       expect(v.visitType, '');
       expect(v.visitDate, 0);
+    });
+  });
+
+  group('NxPinInput widget', () {
+    testWidgets('renders 6 digit cells and responds to text changes',
+        (tester) async {
+      final ctrl = TextEditingController();
+      bool submitted = false;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: NxPinInput(
+              controller: ctrl,
+              onSubmit: () => submitted = true,
+            ),
+          ),
+        ),
+      );
+
+      expect(find.byType(NxPinInput), findsOneWidget);
+      ctrl.text = '123456';
+      await tester.pump();
+
+      expect(find.text('1'), findsOneWidget);
+      expect(find.text('2'), findsOneWidget);
+      expect(find.text('3'), findsOneWidget);
+      expect(find.text('4'), findsOneWidget);
+      expect(find.text('5'), findsOneWidget);
+      expect(find.text('6'), findsOneWidget);
+      expect(submitted, isTrue);
+    });
+  });
+
+  group('NxNoteSkeleton widget', () {
+    testWidgets('renders without throwing', (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: NxNoteSkeleton(),
+          ),
+        ),
+      );
+
+      expect(find.byType(NxNoteSkeleton), findsOneWidget);
     });
   });
 }

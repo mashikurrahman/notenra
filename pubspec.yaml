@@ -14,11 +14,9 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # In iOS, build-name is used as CFBundleShortVersionString while build-number is used as CFBundleVersion.
 # Read more about iOS versioning at
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
-# In Windows, build-name is used as the major, minor, and patch parts
-# of the product and file versions while build-number is used as the build suffix.
-# Notenra ships under a new bundle id (com.notenra.notenra), so the store sees a
-# brand-new app: version history restarts at 1.0.0+1.
-version: 1.0.0+1
+# Notenra ships under bundle id com.notenra.notenra.
+# Version 1.0.1+2 increments versionCode for the new Play Store release.
+version: 1.0.1+2
 
 environment:
   sdk: ^3.12.2
@@ -58,6 +56,10 @@ dev_dependencies:
     sdk: flutter
   flutter_launcher_icons: ^0.14.1
   image: ^4.2.0
+  # Runs real SQL in unit tests (in-memory sqlite on the host), so the audit
+  # schema migration and the retention predicates are verified rather than
+  # transcribed. Dev-only: the app itself always uses sqflite_sqlcipher.
+  sqflite_common_ffi: ^2.3.4
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is

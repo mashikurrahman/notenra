@@ -1,7 +1,7 @@
 import '../models.dart';
 import 'api_client.dart';
 
-/// Patient roster against the confirmed Anot Health REST API.
+/// Patient roster against the confirmed Notenra REST API.
 ///
 ///   GET  /patients          -> { patients: [{id,name,mrn,date_of_birth,created_at}] }
 ///   POST /patients  body {name, mrn, date_of_birth?} -> 201 { patient: {...} }

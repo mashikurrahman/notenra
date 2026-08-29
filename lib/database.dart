@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:path/path.dart' as p;
 import 'package:sqflite_sqlcipher/sqflite.dart';
 
@@ -29,6 +30,22 @@ class AppDatabase {
     await _seedIfNeeded(_db!);
     return _db!;
   }
+
+  /// Test seam: run the real schema creation against a caller-supplied database
+  /// (an in-memory sqlite in tests), so the shipped DDL is what gets verified.
+  @visibleForTesting
+  Future<void> createSchemaForTest(Database db) => _onCreate(db, 4);
+
+  /// Test seam: run the real migration path. A fresh install exercises
+  /// [_onCreate] only, so an upgrade bug is invisible without this.
+  @visibleForTesting
+  Future<void> upgradeSchemaForTest(Database db, int from, int to) =>
+      _onUpgrade(db, from, to);
+
+  /// Test seam: adopt an already-open database, so the query and retention
+  /// methods below run their real SQL without the Keystore/SQLCipher stack.
+  @visibleForTesting
+  void useDatabaseForTest(Database db) => _db = db;
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 2) {

@@ -135,8 +135,8 @@ class AuthApi {
       return LoginResult(outcome,
           temporaryToken: tempToken, message: data['message']?.toString());
     }
-    // The session JWT now arrives in the __Host-anot_session cookie rather than
-    // the body, so fall back to the cookie-extracted token.
+    // The session JWT now arrives in the session cookie rather than the body,
+    // so fall back to the cookie-extracted token.
     final token =
         (data['token'] ?? data['jwt'] ?? data['accessToken'])?.toString() ??
             cookieToken;
@@ -241,7 +241,7 @@ class AuthApi {
   Future<({Map<String, dynamic>? user, String? error})> _saveSessionFrom(
       Object? data, Headers headers) async {
     final map = data is Map ? data.cast<String, dynamic>() : const {};
-    // Body token, else the session JWT from the __Host-anot_session cookie.
+    // Body token, else the session JWT from the session cookie.
     final token =
         (map['token'] ?? map['jwt'] ?? map['accessToken'])?.toString() ??
             ApiClient.sessionJwtFromHeaders(headers);

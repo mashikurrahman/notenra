@@ -17,7 +17,9 @@ import 'api/auth_api.dart';
 import 'api/clinical_models.dart' show VisitStatus;
 import 'api/patients_api.dart';
 import 'api/token_store.dart';
+import 'app_log.dart';
 import 'audio_vault.dart';
+import 'audit_scrub.dart';
 import 'database.dart';
 import 'models.dart';
 import 'recording_foreground.dart';
@@ -359,7 +361,7 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
       await _refreshPatients();
       await _refreshUsers();
       await _recoverInterruptedRecording();
-      await purgeOldRecordings();
+      await runLocalRetention();
       await _audit('LOGIN_SUCCESS', details: 'Clinician ${user.username} authenticated');
       notifyListeners();
       return true;
@@ -403,7 +405,7 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
         await _clinical?.refresh();
         await _refreshPatients();
         await _recoverInterruptedRecording();
-        await purgeOldRecordings();
+        await runLocalRetention();
         await _audit('LOGIN_SUCCESS',
             details: 'Live login ${_currentUser!.username}');
         // Now that the clinician is engaged, ask for notification permission
@@ -580,7 +582,7 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
     await _clinical?.refresh();
     await _refreshPatients();
     await _recoverInterruptedRecording();
-    await purgeOldRecordings();
+    await runLocalRetention();
     await _audit('LOGIN_SUCCESS', details: 'Live login ($how) ${_currentUser!.username}');
     NotificationService.instance.requestPermission();
     notifyListeners();
@@ -716,39 +718,16 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
   /// [patientId] is the correct way to tie an event to a patient: it is a
   /// reference, not an identifier, and it stays meaningful after the row leaves
   /// the device. [details] is free text for the human reading the log and must
-  /// never name a patient — it is scrubbed by [_scrubDetails] as a backstop.
+  /// never name a patient — it is scrubbed by [AuditScrub.details] as a backstop.
   Future<void> _audit(String action, {String? clinician, int? patientId, String details = ''}) async {
     await _db.insertAudit(AuditEntry(
       clinicianId: _currentUser?.id ?? -1,
       clinicianName: clinician ?? _currentUser?.fullName ?? 'system',
       action: action,
       patientId: patientId,
-      details: _scrubDetails(details),
+      details: AuditScrub.details(details, _patients.map((p) => p.name)),
       timestamp: DateTime.now().millisecondsSinceEpoch,
     ));
-  }
-
-  /// Last-resort PHI filter for an audit detail string.
-  ///
-  /// Call sites are written not to include PHI, but audit rows are retained for
-  /// years and are shipped to the server, so a leak introduced later would be
-  /// both durable and remote. This catches the two identifiers the app actually
-  /// handles: an MRN in any of its written forms, and the name of any patient
-  /// currently loaded. It is a backstop, not a licence — the clinician's own
-  /// name and email stay, because an audit trail's whole purpose is recording
-  /// who acted.
-  String _scrubDetails(String details) {
-    if (details.isEmpty) return details;
-    var out = details.replaceAll(
-        RegExp(r'\bMRN[-\s:]?[A-Za-z0-9][A-Za-z0-9-]*', caseSensitive: false),
-        '[mrn]');
-    for (final p in _patients) {
-      final name = p.name.trim();
-      // Two characters or fewer would match far too much ("Al", initials).
-      if (name.length < 3) continue;
-      if (out.contains(name)) out = out.replaceAll(name, '[patient]');
-    }
-    return out.length <= 500 ? out : '${out.substring(0, 497)}...';
   }
 
   Future<List<AuditEntry>> loadAuditLogs() => _db.getAuditLogs();
@@ -1063,6 +1042,27 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
         }
       }
     } catch (_) {/* best-effort cleanup */}
+  }
+
+  /// Local audit retention. The server holds the authoritative 7-year trail; the
+  /// device keeps a 90-day window so a clinician (or an investigator) can still
+  /// see recent activity offline.
+  ///
+  /// Only rows the server has already accepted are eligible — see
+  /// [AppDatabase.purgeSyncedAuditOlderThan]. Until audit shipping is live
+  /// nothing is marked synced, so this is inert rather than destructive.
+  Future<void> purgeOldAuditLogs(
+      {Duration keepFor = const Duration(days: 90)}) async {
+    try {
+      final removed = await _db.purgeSyncedAuditOlderThan(keepFor);
+      if (removed > 0) AppLog.log('AUDIT', 'purged $removed shipped rows');
+    } catch (_) {/* best-effort cleanup */}
+  }
+
+  /// All local data-minimisation in one call, run after each successful sign-in.
+  Future<void> runLocalRetention() async {
+    await purgeOldRecordings();
+    await purgeOldAuditLogs();
   }
 
   Future<void> startRecording(int patientId) async {

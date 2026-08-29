@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Seed sample patients (and their scheduled visits) on the Anot Health server.
+ * Seed sample patients (and their scheduled visits) on the Notenra server.
  *
  * WHY VISITS ARE CREATED BY DEFAULT
  * ---------------------------------
@@ -18,7 +18,7 @@
  *   --email <s>         clinician login (or env NOTENRA_EMAIL)
  *   --password <s>      password         (or env NOTENRA_PASSWORD)
  *   --token <s>         use an existing JWT instead of logging in
- *   --base <url>        API base (default https://app.anot.health/api)
+ *   --base <url>        API base (default https://app.notenra.com/api)
  *   --per-day <n>       patients per day        (default 40)
  *   --days <n>          number of days          (default 5)
  *   --start-offset <n>  0 = start today, 1 = tomorrow (default 0)
@@ -40,7 +40,7 @@ const path = require('path');
 
 function parseArgs(argv) {
   const out = {
-    base: process.env.NOTENRA_API || 'https://app.anot.health/api',
+    base: process.env.NOTENRA_API || 'https://app.notenra.com/api',
     email: process.env.NOTENRA_EMAIL || null,
     password: process.env.NOTENRA_PASSWORD || null,
     token: process.env.NOTENRA_TOKEN || null,
@@ -164,10 +164,11 @@ class Api {
     // Capture a rotated session cookie if the server issues one.
     const setCookie = res.headers.getSetCookie ? res.headers.getSetCookie() : [];
     for (const c of setCookie) {
-      const m = /(__Host-)?anot_session=([^;]+)/.exec(c);
+      // Any conventionally-named session cookie, with or without a prefix.
+      const m = /(?:__Host-|__Secure-)?[A-Za-z0-9_.-]*session=([^;]+)/i.exec(c);
       if (m) {
         this.sessionCookie = c.split(';')[0];
-        if (!this.token) this.token = m[2];
+        if (!this.token) this.token = m[1];
       }
     }
 

@@ -49,7 +49,6 @@ app.*.map.json
 *.apk
 *.aab
 *.ipa
-AnotHealth-universal.apk
 
 # iOS (CocoaPods + Xcode user data — regenerated on the Mac via `pod install`)
 **/ios/Pods/
