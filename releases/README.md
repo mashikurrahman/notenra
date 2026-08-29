@@ -13,16 +13,17 @@ Two folders, one rule.
 The known-good build approved for production. Nothing changes here unless the
 **user explicitly says "update the stable version."**
 
-- **Notenra-stable-v1.0.1+2.aab** (65.8 MB, version `1.0.1+2`, versionCode: `2`, built Aug 29, 2026)
-  - Full UI Ergonomics (Today floating quick-add, "Now" live timeline marker, swipe-to-record/details gestures, schedule density dots).
+- **Notenra-stable-v1.0.2+3.aab** (66.0 MB, version `1.0.2+3`, versionCode: `3`, built Aug 29, 2026)
+  - Full UI Ergonomics (Today quick-add, Now marker, swipe gestures, schedule density dots).
   - MFA discrete 6-box PIN input with auto-paste.
-  - Neutral shimmer skeleton loaders and scribe turnaround SLA badges.
+  - Shimmer skeleton loaders and turnaround badges.
+  - Live waveform audio meter, SOAP navigation tabs, per-section copy buttons, and scribe templates.
   - Signed with production upload key (`upload-keystore.jks`).
 
 ## `dev/` — work in progress.
 Every new change is built here first. NOT production until promoted.
 
-- **Notenra-dev-v1.0.1+2.aab** (version `1.0.1+2`, versionCode: `2`)
+- **Notenra-dev-v1.0.2+3.aab** (version `1.0.2+3`, versionCode: `3`)
 
 ## Promotion rule
 When the user says **"update the stable version"**, copy the chosen `dev/` APK

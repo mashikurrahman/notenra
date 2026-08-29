@@ -14,9 +14,8 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # In iOS, build-name is used as CFBundleShortVersionString while build-number is used as CFBundleVersion.
 # Read more about iOS versioning at
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
-# Notenra ships under bundle id com.notenra.notenra.
-# Version 1.0.1+2 increments versionCode for the new Play Store release.
-version: 1.0.1+2
+# Version 1.0.2+3 increments versionCode for Play Store upload.
+version: 1.0.2+3
 
 environment:
   sdk: ^3.12.2
