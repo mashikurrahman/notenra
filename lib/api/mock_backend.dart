@@ -35,7 +35,7 @@ class MockBackend implements ApiBackend {
       id: id,
       patientId: patientId,
       patientName: patientName,
-      status: VisitStatus.recording,
+      status: VisitStatus.pendingUpload,
       durationMs: 0,
       createdAt: DateTime.now().millisecondsSinceEpoch,
     );
@@ -52,15 +52,74 @@ class MockBackend implements ApiBackend {
       id: visitId,
       patientId: 0,
       patientName: 'Patient',
-      status: VisitStatus.withScribe,
+      status: VisitStatus.pendingUpload,
       durationMs: 0,
       createdAt: DateTime.now().millisecondsSinceEpoch,
     );
-    v = v.copyWith(status: VisitStatus.withScribe, clearLocalAudio: true);
+    final count = v.recordingCount + 1;
+    final noteContent = _buildAiSoapNote(v.patientName, count);
+    final note = ClinicalNote(
+      id: 'note_$visitId',
+      visitId: visitId,
+      content: noteContent,
+      version: (v.note?.version ?? 0) + 1,
+      feedback: v.note?.feedback ?? const [],
+      updatedAt: DateTime.now().millisecondsSinceEpoch,
+    );
+    v = v.copyWith(
+      status: VisitStatus.readyForReview,
+      clearLocalAudio: true,
+      recordingCount: count,
+      note: note,
+    );
     _visits[visitId] = v;
-    // The note is authored by a real scribe (scribe portal) — NOT fabricated.
-    // The visit simply waits in "With scribe" until a scribe submits a note.
     return v;
+  }
+
+  String _buildAiSoapNote(String patientName, int recordingCount) {
+    final addendum = recordingCount > 1
+        ? '\n\n*Addendum (from recording #$recordingCount):* Patient confirmed adherence to medication regimen and reported no adverse side effects.'
+        : '';
+    final addendumAssessment = recordingCount > 1
+        ? '\n4. Medication compliance review (ICD-10: Z91.19) - Active regimen verified.'
+        : '';
+    final addendumCode = recordingCount > 1
+        ? '\n• Z91.19 - Patient noncompliance with other medical treatment and regimen (monitoring/history)'
+        : '';
+
+    return '''SUBJECTIVE:
+Chief Complaint: General clinical follow-up and health evaluation.
+History of Present Illness: Patient $patientName presents for clinical evaluation. Reports ongoing symptoms with moderate severity, responding well to current interventions. Denies fever, chills, acute chest discomfort, or respiratory distress. Sleep and appetite reported within normal baseline.$addendum
+
+OBJECTIVE:
+General: Alert, oriented x3, well-nourished, in no acute distress.
+Vital Signs: BP 122/78 mmHg, HR 72 bpm, SpO2 99% on room air, Temp 98.4 F, RR 16/min.
+HEENT: Normocephalic, atraumatic. Pupils equal, round, and reactive to light.
+Cardiovascular: Regular rate and rhythm, normal S1/S2, no murmurs or gallops.
+Pulmonary: Clear to auscultation bilaterally, no wheezes or rales.
+Abdomen: Soft, non-tender, non-distended, normoactive bowel sounds.
+
+ASSESSMENT:
+1. Essential (primary) hypertension (ICD-10: I10) - Stable, well-controlled on current therapy.
+2. Encounter for general adult medical examination without abnormal findings (ICD-10: Z00.00).
+3. Routine health maintenance and counseling (ICD-10: Z71.89) - Addressed dietary sodium and cardiovascular wellness.$addendumAssessment
+
+PLAN:
+1. Continue current antihypertensive regimen as tolerated.
+2. Maintain regular home blood pressure monitoring logs (target < 130/80 mmHg).
+3. Routine preventive laboratory orders: CMP, Lipid Profile, and Urinalysis.
+4. Patient counselled regarding low-sodium lifestyle and cardiovascular risk reduction.
+5. Follow up in 3 months or sooner if symptoms arise.
+
+MEDICAL CODES & BILLING:
+ICD-10-CM Diagnosis Codes:
+• I10 - Essential (primary) hypertension
+• Z00.00 - Encounter for general adult medical examination without abnormal findings
+• Z71.89 - Other specified counseling$addendumCode
+
+CPT / E&M Procedure Codes:
+• 99214 - Office or other outpatient visit, established patient (30-39 minutes, moderate complexity MDM)
+• 99401 - Preventive medicine counseling and/or risk factor reduction intervention (15 minutes)''';
   }
 
   @override

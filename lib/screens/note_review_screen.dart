@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -84,6 +86,29 @@ List<_SoapSection> _parseSoap(String text) {
       curIcon = Icons.playlist_add_check;
       final rest = t.replaceFirst(RegExp(r'^plan:?', caseSensitive: false), '').trim();
       if (rest.isNotEmpty) buf.writeln(rest);
+    } else if (lower.startsWith('medical codes') ||
+        lower.startsWith('billing & coding') ||
+        lower.startsWith('billing & codes') ||
+        lower.startsWith('billing and coding') ||
+        lower.startsWith('billing:') ||
+        lower.startsWith('icd-10 & cpt') ||
+        lower.startsWith('coding:') ||
+        lower.startsWith('codes:') ||
+        lower == 'billing' ||
+        lower == 'codes') {
+      flush();
+      curKey = 'CODES';
+      curTitle = 'Medical Codes & Billing';
+      curColor = const Color(0xFF7C3AED);
+      curIcon = Icons.receipt_long;
+      final rest = t
+          .replaceFirst(
+              RegExp(
+                  r'^(medical codes & billing|medical codes|billing & coding|billing & codes|billing and coding|billing|icd-10 & cpt codes|icd-10 & cpt|coding|codes):?',
+                  caseSensitive: false),
+              '')
+          .trim();
+      if (rest.isNotEmpty) buf.writeln(rest);
     } else {
       if (curKey != null) {
         buf.writeln(line);
@@ -114,30 +139,64 @@ class _NoteReviewScreenState extends State<NoteReviewScreen> {
 
   bool _loadingNote = false;
   bool _loadFailed = false;
+  Timer? _pollTimer;
 
   @override
   void initState() {
     super.initState();
     _editCtrl = TextEditingController();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _initLoad());
   }
 
-  Future<void> _loadNote() async {
-    if (!mounted) return;
-    setState(() {
-      _loadingNote = true;
-      _loadFailed = false;
+  void _initLoad() {
+    _loadNote();
+    final v = context.read<ClinicalService>().visitById(widget.visitId);
+    if (v?.note == null || v!.note!.content.trim().isEmpty) {
+      _startAutoPoll();
+    }
+  }
+
+  void _startAutoPoll() {
+    _pollTimer?.cancel();
+    _pollTimer = Timer.periodic(const Duration(seconds: 3), (timer) async {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      final v = context.read<ClinicalService>().visitById(widget.visitId);
+      if (v?.note != null && v!.note!.content.trim().isNotEmpty) {
+        timer.cancel();
+        _pollTimer = null;
+        return;
+      }
+      await _loadNote(silent: true);
     });
-    final ok = await context.read<ClinicalService>().ensureNote(widget.visitId);
+  }
+
+  Future<void> _loadNote({bool silent = false, bool force = false}) async {
+    if (!mounted) return;
+    if (!silent) {
+      setState(() {
+        _loadingNote = true;
+        _loadFailed = false;
+      });
+    }
+    final ok = await context.read<ClinicalService>().ensureNote(widget.visitId, force: force);
     if (!mounted) return;
     setState(() {
       _loadingNote = false;
       final v = context.read<ClinicalService>().visitById(widget.visitId);
-      _loadFailed = !ok && v?.note == null;
+      _loadFailed = !ok && (v?.note == null || v!.note!.content.trim().isEmpty);
+      if (v?.note != null && v!.note!.content.trim().isNotEmpty) {
+        _pollTimer?.cancel();
+        _pollTimer = null;
+      }
     });
   }
 
   @override
   void dispose() {
+    _pollTimer?.cancel();
     _editCtrl.dispose();
     super.dispose();
   }
@@ -179,7 +238,7 @@ class _NoteReviewScreenState extends State<NoteReviewScreen> {
                 : visit.patientName,
             subtitle: '${s.detail}  ·  $when',
             actions: [
-              if (visit.note != null) ...[
+              if (visit.note != null && visit.note!.content.trim().isNotEmpty) ...[
                 HeaderIconButton(
                   icon: Icons.copy,
                   tooltip: 'Copy full note',
@@ -194,7 +253,7 @@ class _NoteReviewScreenState extends State<NoteReviewScreen> {
                   icon: Icons.refresh,
                   tooltip: 'Reload note',
                   busy: _loadingNote,
-                  onTap: _loadingNote ? null : _loadNote,
+                  onTap: _loadingNote ? null : () => _loadNote(force: true),
                 ),
               ],
             ],
@@ -207,22 +266,16 @@ class _NoteReviewScreenState extends State<NoteReviewScreen> {
 
   Widget _body(BuildContext context, ClinicalService svc, Visit visit) {
     final note = visit.note;
-    final isBusy = visit.status == VisitStatus.withScribe ||
-        visit.status == VisitStatus.changesRequested ||
-        visit.status == VisitStatus.pendingUpload;
+    final hasContent = note != null && note.content.trim().isNotEmpty;
 
-    if (note == null && !isBusy) {
+    if (!hasContent) {
       if (_loadFailed) return _loadFailedState();
-      if (!_loadingNote) {
-        WidgetsBinding.instance.addPostFrameCallback((_) => _loadNote());
-      }
-      return _spinnerState('Loading the note…');
-    }
-    if (isBusy || note == null) {
       return _busyState(visit);
     }
 
-    final reviewable = visit.status == VisitStatus.readyForReview;
+    final reviewable = visit.status == VisitStatus.readyForReview ||
+        visit.status == VisitStatus.withScribe ||
+        visit.status == VisitStatus.pendingUpload;
     final approved = visit.status == VisitStatus.approved ||
         visit.status == VisitStatus.syncedToEhr;
 
@@ -239,7 +292,7 @@ class _NoteReviewScreenState extends State<NoteReviewScreen> {
                 _feedbackHistory(note),
                 const SizedBox(height: Nx.s3),
               ],
-              _noteCard(note, reviewable, parsedSections),
+              _noteCard(note, reviewable, parsedSections, visit),
             ],
           ),
         ),
@@ -261,6 +314,7 @@ class _NoteReviewScreenState extends State<NoteReviewScreen> {
       ('OBJECTIVE', 'Objective (O)', Icons.biotech),
       ('ASSESSMENT', 'Assessment (A)', Icons.analytics_outlined),
       ('PLAN', 'Plan (P)', Icons.playlist_add_check),
+      ('CODES', 'Codes (ICD/CPT)', Icons.receipt_long),
     ].where((t) => availableKeys.contains(t.$1)).toList();
 
     return Container(
@@ -297,7 +351,8 @@ class _NoteReviewScreenState extends State<NoteReviewScreen> {
     );
   }
 
-  Widget _noteCard(ClinicalNote note, bool reviewable, List<_SoapSection> sections) {
+  Widget _noteCard(ClinicalNote note, bool reviewable, List<_SoapSection> sections, Visit visit) {
+    final count = visit.recordingCount;
     return NxCard(
       elevated: true,
       borderColor: _editing ? Nx.primary : Nx.border,
@@ -307,16 +362,28 @@ class _NoteReviewScreenState extends State<NoteReviewScreen> {
         children: [
           Row(
             children: [
-              Icon(_editing ? Icons.edit : Icons.description_outlined,
+              Icon(_editing ? Icons.edit : Icons.auto_awesome,
                   color: Nx.primary, size: 18),
               const SizedBox(width: Nx.s2),
-              Text(_editing ? 'Editing note' : 'Clinical note',
+              Text(_editing ? 'Editing note' : 'AI Clinical Note',
                   style: const TextStyle(
                       fontWeight: FontWeight.w800,
                       color: Nx.ink,
                       fontSize: 15)),
               const SizedBox(width: Nx.s2),
-              StatusPill(label: 'v${note.version}', color: Nx.muted),
+              StatusPill(
+                label: 'AI Draft',
+                color: Nx.accent,
+                icon: Icons.auto_awesome,
+              ),
+              if (count > 1) ...[
+                const SizedBox(width: Nx.s2),
+                StatusPill(
+                  label: '$count recordings',
+                  color: Nx.primary,
+                  icon: Icons.graphic_eq,
+                ),
+              ],
               const Spacer(),
               if (reviewable && !_editing)
                 TextButton.icon(
@@ -430,20 +497,144 @@ class _NoteReviewScreenState extends State<NoteReviewScreen> {
                 ],
               ),
               const SizedBox(height: 8),
-              SelectableText(
-                sec.content,
-                onSelectionChanged: (sel, _) => setState(
-                    () => _selected = sel.textInside(sec.content).trim()),
-                style: const TextStyle(
-                  color: Nx.ink,
-                  fontSize: 14,
-                  height: 1.55,
+              if (sec.key == 'CODES')
+                _renderCodesSection(sec.content, sec.color)
+              else
+                SelectableText(
+                  sec.content,
+                  onSelectionChanged: (sel, _) => setState(
+                      () => _selected = sel.textInside(sec.content).trim()),
+                  style: const TextStyle(
+                    color: Nx.ink,
+                    fontSize: 14,
+                    height: 1.55,
+                  ),
                 ),
-              ),
             ],
           ),
         );
       }).toList(),
+    );
+  }
+
+  Widget _renderCodesSection(String content, Color color) {
+    final lines = content.split('\n');
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ...lines.map((line) {
+          final t = line.trim();
+          if (t.isEmpty) return const SizedBox(height: 6);
+          final lower = t.toLowerCase();
+          final isHeader = t.endsWith(':') ||
+              lower.contains('diagnosis codes') ||
+              lower.contains('procedure codes') ||
+              lower.contains('billing codes') ||
+              lower.contains('cpt / e&m');
+          if (isHeader) {
+            return Padding(
+              padding: const EdgeInsets.only(top: 8, bottom: 4),
+              child: Text(
+                t,
+                style: const TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w800,
+                  color: Nx.secondary,
+                  letterSpacing: 0.3,
+                ),
+              ),
+            );
+          }
+
+          // Check for bullet or code pattern: "• I10 - Essential..." or "• 99214 - Office..."
+          final cleanLine = t.replaceFirst(RegExp(r'^[•\-\*]\s*'), '');
+          final parts = cleanLine.split(RegExp(r'[:\-–]\s+'));
+          final code = parts.isNotEmpty ? parts[0].trim() : '';
+          final desc = parts.length > 1 ? parts.sublist(1).join(' - ').trim() : '';
+          final isIcd = RegExp(r'^[A-Z][0-9][0-9A-Z]?(\.[0-9A-Z]{1,4})?$').hasMatch(code);
+          final isCpt = RegExp(r'^[0-9]{4,5}[A-Z]?$').hasMatch(code);
+
+          if (isIcd || isCpt) {
+            final tag = isIcd ? 'ICD-10' : 'CPT';
+            final tagColor = isIcd ? const Color(0xFF2563EB) : const Color(0xFF7C3AED);
+            return Container(
+              margin: const EdgeInsets.only(bottom: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: Nx.canvas,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Nx.border),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: tagColor.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      tag,
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                        color: tagColor,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    code,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      color: Nx.ink,
+                    ),
+                  ),
+                  if (desc.isNotEmpty) ...[
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        desc,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          color: Nx.secondary,
+                        ),
+                      ),
+                    ),
+                  ],
+                  IconButton(
+                    icon: const Icon(Icons.copy, size: 14, color: Nx.muted),
+                    tooltip: 'Copy code $code',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () {
+                      Clipboard.setData(ClipboardData(text: code));
+                      HapticFeedback.lightImpact();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Code $code copied.')),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            );
+          }
+
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: SelectableText(
+              t,
+              style: const TextStyle(
+                color: Nx.ink,
+                fontSize: 13.5,
+                height: 1.5,
+              ),
+            ),
+          );
+        }),
+      ],
     );
   }
 
@@ -498,17 +689,13 @@ class _NoteReviewScreenState extends State<NoteReviewScreen> {
     );
   }
 
-  Widget _spinnerState(String message) {
-    return const NxNoteSkeleton();
-  }
-
   Widget _loadFailedState() {
     return NxEmptyState(
       icon: Icons.cloud_off,
       title: "Couldn't load the note",
       hint: 'Check your connection and try again.',
       action: FilledButton.icon(
-        onPressed: _loadingNote ? null : _loadNote,
+        onPressed: _loadingNote ? null : () => _loadNote(force: true),
         icon: const Icon(Icons.refresh, size: 18),
         label: const Text('Retry'),
       ),
@@ -516,25 +703,69 @@ class _NoteReviewScreenState extends State<NoteReviewScreen> {
   }
 
   Widget _busyState(Visit visit) {
-    final s = styleFor(visit.status);
-    final msg = switch (visit.status) {
-      VisitStatus.withScribe =>
-        'The scribe is drafting this note. It will appear here when ready for review.',
-      VisitStatus.changesRequested =>
-        'Your comments were sent. The scribe is updating the note.',
-      VisitStatus.pendingUpload =>
-        'Your recording is queued to upload. The note will be drafted once received.',
-      _ => 'This note is being processed.',
-    };
+    final count = visit.recordingCount;
+    final isUploading = visit.status == VisitStatus.pendingUpload;
+    final title = isUploading ? 'Securing audio…' : 'AI Generating Clinical Note';
+    final msg = isUploading
+        ? 'Your audio recording is queued to upload. AI note generation will begin immediately upon upload.'
+        : 'AI is analyzing ${count > 1 ? '$count consultation recordings' : 'consultation audio'} and structuring the SOAP note (Subjective, Objective, Assessment, Plan)…';
 
-    return NxEmptyState(
-      icon: s.icon,
-      title: s.label,
-      hint: msg,
-      action: OutlinedButton.icon(
-        onPressed: _loadingNote ? null : _loadNote,
-        icon: const Icon(Icons.refresh, size: 18),
-        label: const Text('Check for updates'),
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(Nx.s5),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 64,
+              height: 64,
+              decoration: BoxDecoration(
+                color: Nx.primary.withValues(alpha: 0.12),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.auto_awesome, color: Nx.primary, size: 32),
+            ),
+            const SizedBox(height: Nx.s4),
+            Text(
+              title,
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+                color: Nx.ink,
+              ),
+            ),
+            const SizedBox(height: Nx.s2),
+            Text(
+              msg,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 13.5,
+                color: Nx.secondary,
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: Nx.s5),
+            const SizedBox(
+              width: 160,
+              child: LinearProgressIndicator(
+                minHeight: 4,
+                backgroundColor: Nx.border,
+                valueColor: AlwaysStoppedAnimation<Color>(Nx.accent),
+              ),
+            ),
+            const SizedBox(height: Nx.s5),
+            OutlinedButton.icon(
+              onPressed: _loadingNote ? null : () => _loadNote(force: true),
+              icon: _loadingNote
+                  ? const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.refresh, size: 18),
+              label: const Text('Check for updates'),
+            ),
+          ],
+        ),
       ),
     );
   }

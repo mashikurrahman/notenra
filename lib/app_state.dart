@@ -1012,11 +1012,18 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> openPatientVisit(int patientId) async {
     _selectedPatient = patientById(patientId);
+    final v = _clinical?.recordedVisitForPatient(patientId) ??
+        _clinical?.latestVisitForPatient(patientId);
+    if (v != null && !_isLocalId(v.id)) {
+      _openVisitByPatient[patientId] = v.id;
+    }
     await loadRecordings(patientId);
     await _audit('VIEW_PATIENT_RECORDS', patientId: patientId,
         details: 'Opened visit');
     notifyListeners();
   }
+
+  static bool _isLocalId(String id) => id.startsWith('local_');
 
   Future<void> loadRecordings(int patientId) async {
     _recordings = await _db.getRecordingsForPatient(patientId);
@@ -1263,13 +1270,19 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
           if (_selectedPatient?.id == patientId) await loadRecordings(patientId);
         }
       }
+      final existingId = openVisitFor(patientId) ??
+          _clinical?.recordedVisitForPatient(patientId)?.id ??
+          _clinical?.latestVisitForPatient(patientId)?.id;
       final visit = await _clinical?.submitRecording(
         patientId: patientId,
         patientName: patientNameById(patientId),
         audioPath: finalPath,
         durationMs: rec.durationMs,
-        existingVisitId: openVisitFor(patientId),
+        existingVisitId: existingId,
       );
+      if (visit != null && !_isLocalId(visit.id)) {
+        _openVisitByPatient[patientId] = visit.id;
+      }
       // Mark uploaded for ANY status that means the server has the audio — not
       // just 'withScribe'. If the scribe had already submitted a note the
       // status comes back readyForReview/approved, and the old exact-match

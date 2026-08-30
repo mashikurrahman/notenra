@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
+import '../api/clinical_models.dart';
 import '../app_state.dart';
 import '../models.dart';
 import '../services/clinical_service.dart';
@@ -12,6 +13,7 @@ import '../theme.dart';
 import '../widgets/notenra_header.dart';
 import '../widgets/nx.dart';
 import '../widgets/pressable.dart';
+import 'note_review_screen.dart';
 
 /// Per-patient capture screen: record / pause / stop / manage audio.
 ///
@@ -203,10 +205,35 @@ class _PatientVisitScreenState extends State<PatientVisitScreen>
     final state = context.read<AppState>();
     final saved = await state.stopAndSaveRecording();
     if (!mounted) return;
-    final msg = saved == null
-        ? 'Nothing was recorded.'
-        : 'Recording saved — securing it and sending to the scribe.';
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    if (saved == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Nothing was recorded.')));
+      return;
+    }
+    final svc = context.read<ClinicalService>();
+    final visit = svc.recordedVisitForPatient(widget.patientId) ??
+        svc.latestVisitForPatient(widget.patientId);
+    final visitId = visit?.id ?? state.openVisitFor(widget.patientId);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text('Recording saved. AI note generation ready.'),
+        action: (visitId != null && visitId.isNotEmpty)
+            ? SnackBarAction(
+                label: 'View AI Note',
+                textColor: Colors.white,
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => NoteReviewScreen(visitId: visitId),
+                    ),
+                  );
+                },
+              )
+            : null,
+        duration: const Duration(seconds: 6),
+      ),
+    );
   }
 
   @override
@@ -253,9 +280,135 @@ class _PatientVisitScreenState extends State<PatientVisitScreen>
               padding: const EdgeInsets.fromLTRB(Nx.s4, Nx.s5, Nx.s4, Nx.s8),
               children: [
                 _recorderCard(state, recording),
-                const SizedBox(height: Nx.s6),
+                if (!recording) ...[
+                  const SizedBox(height: Nx.s4),
+                  _aiNoteBanner(state, svc),
+                ],
+                const SizedBox(height: Nx.s5),
                 _recordingsSection(state, svc),
               ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _aiNoteBanner(AppState state, ClinicalService svc) {
+    final visit = svc.recordedVisitForPatient(widget.patientId) ??
+        svc.latestVisitForPatient(widget.patientId);
+    final count = state.recordings.isNotEmpty
+        ? state.recordings.length
+        : svc.recordedCountForPatient(widget.patientId);
+    if (count == 0 && visit?.note == null) {
+      return const SizedBox.shrink();
+    }
+
+    final hasNote = visit?.note != null && visit!.note!.content.trim().isNotEmpty;
+    final isProcessing = visit?.status == VisitStatus.withScribe ||
+        visit?.status == VisitStatus.pendingUpload;
+    final targetId = visit?.id ?? state.openVisitFor(widget.patientId);
+
+    return NxCard(
+      elevated: true,
+      color: hasNote ? Nx.accentSoft : Nx.card,
+      borderColor: hasNote
+          ? Nx.accent.withValues(alpha: 0.35)
+          : Nx.primary.withValues(alpha: 0.30),
+      padding: const EdgeInsets.all(Nx.s4),
+      onTap: targetId != null
+          ? () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => NoteReviewScreen(visitId: targetId),
+                ),
+              )
+          : null,
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: hasNote
+                  ? Nx.accent.withValues(alpha: 0.15)
+                  : Nx.primary.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(Nx.rSm),
+            ),
+            child: Icon(
+              hasNote ? Icons.description : Icons.auto_awesome,
+              color: hasNote ? Nx.accent : Nx.primary,
+              size: 22,
+            ),
+          ),
+          const SizedBox(width: Nx.s3),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        hasNote
+                            ? 'AI Clinical Note Ready'
+                            : isProcessing
+                                ? 'AI Generating Note…'
+                                : 'Generate AI Note',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 15,
+                          color: Nx.ink,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    StatusPill(
+                      label: hasNote ? 'Ready' : (isProcessing ? 'Processing' : 'AI'),
+                      color: hasNote ? Nx.accent : Nx.primary,
+                      solid: false,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  hasNote
+                      ? 'Generated from $count recording${count == 1 ? '' : 's'}. Tap to review.'
+                      : isProcessing
+                          ? 'Analyzing $count recording${count == 1 ? '' : 's'}… Tap to view progress.'
+                          : 'Generate SOAP note from $count recording${count == 1 ? '' : 's'}.',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Nx.secondary, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: Nx.s2),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: hasNote ? Nx.accent : Nx.primary,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            onPressed: targetId != null
+                ? () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => NoteReviewScreen(visitId: targetId),
+                      ),
+                    )
+                : null,
+            child: Text(
+              hasNote
+                  ? 'Review'
+                  : isProcessing
+                      ? 'View'
+                      : 'Generate',
+              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5),
             ),
           ),
         ],

@@ -73,3 +73,5 @@ app.*.map.json
 
 # Local build artifacts / screenshots (not source)
 dist/
+release_builds/
+**/android/build/

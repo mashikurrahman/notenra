@@ -184,13 +184,25 @@ class LiveBackend implements ApiBackend {
     if (row.isEmpty) throw StateError('Visit $visitId not found');
 
     var visit = _visitFromApi(row);
-    // Pull the authored note content once the scribe has produced something.
+    // Pull the note content (AI-generated draft or scribe-completed note)
+    // whenever audio exists or a note has been drafted/submitted.
     final noteStatus = _str(row, ['note_status'])?.toLowerCase();
+    final hasAudio = visit.recordingCount > 0 || (visit.durationMs > 0);
     if (noteStatus == 'submitted' ||
         noteStatus == 'uploaded' ||
-        noteStatus == 'draft') {
+        noteStatus == 'draft' ||
+        noteStatus == 'ready' ||
+        hasAudio) {
       final note = await _fetchNote(visitId);
-      if (note != null) visit = visit.copyWith(note: note);
+      if (note != null && note.content.trim().isNotEmpty) {
+        visit = visit.copyWith(
+          note: note,
+          status: (visit.status == VisitStatus.approved ||
+                  visit.status == VisitStatus.syncedToEhr)
+              ? visit.status
+              : VisitStatus.readyForReview,
+        );
+      }
     }
     return visit;
   }
@@ -327,13 +339,21 @@ class LiveBackend implements ApiBackend {
   }) {
     switch (noteStatus) {
       case 'submitted':
-        return VisitStatus.readyForReview; // scribe finished -> doctor reviews
+      case 'draft':
+      case 'ready':
+      case 'ai_ready':
+      case 'generated':
+        return VisitStatus.readyForReview; // AI draft or scribe finished -> doctor reviews
       case 'uploaded':
+      case 'locked':
+      case 'approved':
         return VisitStatus.approved; // locked / finalized by clinician
     }
     // No (ready) note yet.
-    if (visitStatus == 'uploaded') return VisitStatus.approved;
-    if (hasAudio) return VisitStatus.withScribe; // audio in, scribe working
+    if (visitStatus == 'uploaded' || visitStatus == 'approved' || visitStatus == 'locked') {
+      return VisitStatus.approved;
+    }
+    if (hasAudio) return VisitStatus.withScribe; // audio in, AI/scribe working
     return VisitStatus.pendingUpload; // visit shell, audio not yet uploaded
   }
 

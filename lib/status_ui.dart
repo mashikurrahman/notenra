@@ -32,32 +32,32 @@ class VisitStatusStyle {
 /// Presentation for a visit that has been recorded.
 VisitStatusStyle styleFor(VisitStatus? status) => switch (status) {
       VisitStatus.recording => const VisitStatusStyle(
-          label: 'Recording',
-          detail: 'Capturing now',
+          label: 'Recorded',
+          detail: 'Recording saved',
           color: Nx.accent,
-          icon: Icons.fiber_manual_record,
+          icon: Icons.graphic_eq,
         ),
       VisitStatus.pendingUpload => const VisitStatusStyle(
           label: 'Queued',
-          detail: 'Waiting to upload',
+          detail: 'Securing & uploading',
           color: Nx.muted,
           icon: Icons.cloud_upload_outlined,
         ),
       VisitStatus.withScribe => const VisitStatusStyle(
-          label: 'With scribe',
-          detail: 'A scribe is writing the note',
+          label: 'Processing',
+          detail: 'AI generating note…',
           color: Nx.warning,
-          icon: Icons.edit_note,
+          icon: Icons.auto_awesome,
         ),
       VisitStatus.readyForReview => const VisitStatusStyle(
           label: 'Ready for you',
-          detail: 'Note ready to review',
+          detail: 'AI Note ready to review',
           color: Nx.accent,
           icon: Icons.rate_review_outlined,
         ),
       VisitStatus.changesRequested => const VisitStatusStyle(
-          label: 'Changes sent',
-          detail: 'Scribe is making your changes',
+          label: 'Revising',
+          detail: 'Updating note',
           color: Nx.warning,
           icon: Icons.reply,
         ),

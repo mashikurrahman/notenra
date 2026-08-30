@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Notenra Clinical AI — Developer Architecture & Onboarding Guide</title>
+<style>
+  @page {
+    size: A4;
+    margin: 20mm 15mm 20mm 15mm;
+    @bottom-right {
+      content: counter(page);
+    }
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: #0F172A;
+    background: #FFFFFF;
+    line-height: 1.6;
+    font-size: 13px;
+    margin: 0;
+    padding: 0;
+  }
+  .header-box {
+    background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%);
+    color: #FFFFFF;
+    padding: 24px 28px;
+    border-radius: 10px;
+    margin-bottom: 24px;
+    border-left: 6px solid #10B981;
+  }
+  .header-box h1 {
+    color: #FFFFFF;
+    margin: 0 0 6px 0;
+    font-size: 20px;
+    font-weight: 800;
+    letter-spacing: -0.3px;
+  }
+  .header-box .sub {
+    color: #94A3B8;
+    font-size: 12px;
+    font-weight: 500;
+  }
+  h1 {
+    color: #0F172A;
+    font-size: 18px;
+    font-weight: 800;
+    margin-top: 24px;
+    margin-bottom: 12px;
+    border-bottom: 2px solid #E2E8F0;
+    padding-bottom: 6px;
+  }
+  h2 {
+    color: #1E293B;
+    font-size: 15px;
+    font-weight: 700;
+    margin-top: 20px;
+    margin-bottom: 8px;
+    border-bottom: 1px solid #F1F5F9;
+    padding-bottom: 4px;
+  }
+  h3 {
+    color: #334155;
+    font-size: 13.5px;
+    font-weight: 700;
+    margin-top: 14px;
+    margin-bottom: 6px;
+  }
+  h4 {
+    color: #475569;
+    font-size: 13px;
+    font-weight: 600;
+    margin-top: 10px;
+    margin-bottom: 4px;
+  }
+  p {
+    margin: 6px 0;
+  }
+  ul, ol {
+    margin: 6px 0 12px 20px;
+    padding: 0;
+  }
+  li {
+    margin-bottom: 4px;
+  }
+  hr {
+    border: none;
+    border-top: 1px solid #E2E8F0;
+    margin: 18px 0;
+  }
+  .spacer {
+    height: 6px;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 14px 0;
+    font-size: 12px;
+    background: #FFFFFF;
+    border: 1px solid #CBD5E1;
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  th {
+    background: #F1F5F9;
+    color: #0F172A;
+    font-weight: 700;
+    text-align: left;
+    padding: 8px 12px;
+    border: 1px solid #CBD5E1;
+  }
+  td {
+    padding: 7px 12px;
+    border: 1px solid #E2E8F0;
+    color: #334155;
+  }
+  tr:nth-child(even) td {
+    background: #F8FAFC;
+  }
+  pre {
+    background: #0F172A;
+    color: #F8FAFC;
+    padding: 14px 16px;
+    border-radius: 8px;
+    font-family: "Cascadia Code", "Fira Code", Consolas, Courier, monospace;
+    font-size: 11px;
+    line-height: 1.5;
+    overflow-x: auto;
+    margin: 12px 0;
+  }
+  code {
+    font-family: "Cascadia Code", "Fira Code", Consolas, Courier, monospace;
+    background: #F1F5F9;
+    color: #0F172A;
+    padding: 2px 5px;
+    border-radius: 4px;
+    font-size: 11.5px;
+  }
+  pre code {
+    background: transparent;
+    color: inherit;
+    padding: 0;
+  }
+  .badge-pass {
+    background: #DCFCE7;
+    color: #15803D;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    display: inline-block;
+  }
+  .badge-warn {
+    background: #FEF3C7;
+    color: #B45309;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    display: inline-block;
+  }
+</style>
+</head>
+<body>
+<div class="header-box">
+  <h1>Notenra Clinical AI — Developer Architecture & Onboarding Guide</h1>
+  <div class="sub">Core Subsystems, Offline Synchronization, AudioVault, AI SOAP & Coding Pipeline | Version 2.4.0-PROD</div>
+</div>
+<h1>NOTENRA MOBILE APP — DEVELOPER ARCHITECTURE & ONBOARDING GUIDE</h1>
+<div class="spacer"></div>
+<p>Welcome to the Notenra Flutter codebase! This comprehensive document is designed so any new or existing engineer can understand the entire architecture, core data flows, security mechanisms, offline synchronization, AI clinical note generation, and test suites immediately.</p>
+<div class="spacer"></div>
+<hr/>
+<div class="spacer"></div>
+<h2>1. System Overview & Technology Stack</h2>
+<div class="spacer"></div>
+<p>Notenra is an offline-first ambient AI clinical documentation application built for iOS and Android.</p>
+<div class="spacer"></div>
+<li><strong>Core Framework:</strong> Flutter 3.x / Dart 3.x</li>
+<li><strong>State Management:</strong> <code>Provider</code> (<code>ChangeNotifier</code>, <code>MultiProvider</code>, <code>context.watch/read/select</code>)</li>
+<li><strong>Local Storage & Database:</strong></li>
+<p>  * <code>sqflite_sqlcipher</code> — Full-page AES-256 encrypted SQLite database.</p>
+<p>  * <code>flutter_secure_storage</code> via <code>SecureStore</code> — Hardware-backed KeyStore / Keychain.</p>
+<li><strong>Audio Capture & Cryptography:</strong></li>
+<p>  * <code>record</code> — High-fidelity M4A/AAC consultation capture.</p>
+<p>  * <code>flutter_foreground_task</code> — Android foreground service to prevent OS kills during capture.</p>
+<p>  * <code>encrypt</code> / <code>dart:isolate</code> — Background isolate AES-256-GCM audio encryption at rest.</p>
+<li><strong>Networking & HTTP:</strong></li>
+<p>  * <code>dio</code> via <code>ApiClient</code> — HTTPS client with JWT Bearer auth, CSRF double-submit, and client attribution.</p>
+<li><strong>Offline Synchronization Engine:</strong></li>
+<p>  * Custom write-ahead outbox (<code>SyncEngine</code>) with atomic queueing and exponential backoff retry.</p>
+<div class="spacer"></div>
+<hr/>
+<div class="spacer"></div>
+<h2>2. Directory Structure & File Map</h2>
+<div class="spacer"></div>
+<pre><code>lib/
+├── main.dart                 # App entry point, startup guards, NotenraApp, RootGate, VaultLockScreen
+├── app_state.dart            # Global application state (auth, local DB, audio recorder, UI sync)
+├── database.dart             # SQLCipher database helper, schema migrations (v1-&gt;v4), CRUD queries
+├── security.dart             # PBKDF2 password hashing, DB key management, device ID generation
+├── secure_store.dart         # Fail-closed wrapper around FlutterSecureStorage with debug fallback
+├── audio_vault.dart          # Background Isolate AES-GCM audio encryption (.enc) at rest
+├── audit_scrub.dart          # Deterministic MRN and patient name regex redaction
+├── recording_foreground.dart # Android foreground service configuration for background recording
+├── status_ui.dart            # Standardized visual presentation (colors, labels, icons) for VisitStatus
+├── theme.dart                # Notenra design tokens, colors (Nx), typography, and component styling
+├── api/
+│   ├── api_client.dart       # Dio HTTP wrapper, JWT attachment, CSRF double-submit validation
+│   ├── api_config.dart       # Runtime base URL, environment detection, and build defines
+│   ├── client_identity.dart  # Client attribution headers (x-notenra-device-id, user-agent)
+│   ├── clinical_models.dart  # Core domain models (Visit, ClinicalNote, NoteFeedback, VisitStatus)
+│   ├── live_backend.dart     # Production REST API implementation connecting to Notenra servers
+│   ├── mock_backend.dart     # In-memory mock backend with AI SOAP &amp; Medical Coding generator
+│   └── token_store.dart      # In-memory + secure storage cache for JWT bearer tokens
+├── services/
+│   ├── clinical_service.dart # Visit state coordinator, single-encounter deduplication, note cache
+│   ├── connectivity_service.dart # Network monitoring, offline latch, reconnection callbacks
+│   ├── sync_engine.dart      # Write-ahead persistent outbox for mutations (uploads, edits, approvals)
+│   └── notification_service.dart # Local notifications for upload status &amp; note readiness
+├── screens/
+│   ├── login_screen.dart     # Clinician email/password sign-in screen
+│   ├── mfa_screen.dart       # SMS / TOTP multi-factor verification
+│   ├── home_shell.dart       # Bottom navigation bar (Dashboard, Patients/Schedule, Notes Queue, Profile)
+│   ├── today_screen.dart     # Dashboard overview, "Next Up" hero card, review queue badges
+│   ├── patient_list_screen.dart # Daily schedule, patient roster, date scroller, search
+│   ├── patient_visit_screen.dart# Audio recorder, waveform, AI Note CTA banner, recording list
+│   └── note_review_screen.dart  # SOAP note editor, section tabs, Medical Codes chips, approval footer
+└── widgets/
+    ├── nx.dart               # Reusable UI components (NxCard, StatusPill, NxEmptyState, NxNoteSkeleton)
+    ├── notenra_header.dart   # Branded headers with action buttons and breadcrumbs
+    └── pressable.dart        # Haptic-enabled interactive touch wrapper</code></pre>
+<div class="spacer"></div>
+<hr/>
+<div class="spacer"></div>
+<h2>3. Core Architectural Subsystems & Data Flows</h2>
+<div class="spacer"></div>
+<h3>A. Authentication & Biometric Vault</h3>
+<p>1. <strong>Login Flow:</strong> User authenticates via <code>LoginScreen</code> -> <code>AppState.login()</code>.</p>
+<p>2. <strong>Tokens & Cookies:</strong> <code>ApiClient</code> captures JWT from response body or <code>Set-Cookie</code> (<code>__Host-notenra_session</code>) and saves it in <code>TokenStore</code>.</p>
+<p>3. <strong>Root Gate:</strong> <code>RootGate</code> (<code>main.dart</code>) checks if <code>currentUser</code> is present. If yes, it requires biometric verification via <code>local_auth</code> (<code>VaultLockScreen</code>).</p>
+<p>4. <strong>Auto-Lock:</strong> Inactivity timer resets on any screen tap (<code>Listener</code> in <code>NotenraApp</code>).</p>
+<div class="spacer"></div>
+<h3>B. Consultation Recording & Audio Vault</h3>
+<p>1. <strong>Capture:</strong> Clinician taps "Record" in <code>PatientVisitScreen</code>.</p>
+<p>2. <strong>Foreground Service:</strong> <code>recording_foreground.dart</code> launches an active notification to prevent Android process kills.</p>
+<p>3. <strong>Saving & Encryption:</strong> Stopping capture calls <code>AppState.stopAndSaveRecording()</code>:</p>
+<p>   - Stores raw audio to temporary file.</p>
+<p>   - Spawns background Dart Isolate (<code>AudioVault.encryptInPlace()</code>).</p>
+<p>   - Encrypts via <strong>AES-256-GCM</strong> using a 256-bit key from KeyStore (<code>audio_key_v1</code>).</p>
+<p>   - Replaces plaintext file with <code>.enc</code> file and deletes the plaintext file.</p>
+<div class="spacer"></div>
+<h3>C. Single Encounter Deduplication & Visit Reuse</h3>
+<li><strong>Rule:</strong> A patient encounter must have <strong>exactly one visit record</strong> on the backend, even if the doctor records multiple audio clips (e.g. consultation + addendum).</li>
+<li><strong>Resolution Pipeline (<code>ClinicalService.submitRecording</code>):</strong></li>
+<p>  <code></code>`</p>
+<p>  reuseId = existingVisitId</p>
+<p>         ?? _openUnrecordedVisitId(patientId)</p>
+<p>         ?? recordedVisitForPatient(patientId)?.id</p>
+<p>         ?? latestVisitForPatient(patientId)?.id;</p>
+<p>  <code></code>`</p>
+<li>If <code>reuseId</code> exists, all new audio uploads append to <code>POST /api/audio/:visitId</code> on the server instead of spawning new visits (<code>POST /visits</code>). This guarantees the web app dashboard displays <strong>exactly 1 patient card</strong>.</li>
+<div class="spacer"></div>
+<h3>D. Offline Sync Outbox (`SyncEngine`)</h3>
+<p>1. When offline or online, mutations (<code>uploadAudio</code>, <code>editNote</code>, <code>requestChanges</code>, <code>approveNote</code>) are enqueued into <code>SyncEngine</code>.</p>
+<p>2. <code>SyncEngine</code> writes the <code>SyncOp</code> to encrypted persistent storage (<code>sync_outbox</code>).</p>
+<p>3. When network connectivity is restored (<code>ConnectivityService.onReconnected</code>), <code>SyncEngine.flush()</code> applies operations in FIFO order with up to 8 exponential backoff attempts.</p>
+<div class="spacer"></div>
+<h3>E. AI SOAP Note Generation & Medical Coding Pipeline</h3>
+<p>1. <strong>Audio Synthesis:</strong> Once audio is received, the backend or <code>MockBackend</code> drafts the clinical note.</p>
+<p>2. <strong>SOAP Structure:</strong> Note format is parsed into structured sections:</p>
+<p>   - <code>SUBJECTIVE</code></p>
+<p>   - <code>OBJECTIVE</code></p>
+<p>   - <code>ASSESSMENT</code> (with embedded ICD-10 diagnostic mappings)</p>
+<p>   - <code>PLAN</code></p>
+<p>   - <code>CODES</code> (Dedicated Medical Codes & Billing)</p>
+<p>3. <strong>Medical Codes Display (<code>note_review_screen.dart</code>):</strong></p>
+<p>   - <strong>ICD-10 Diagnosis Codes</strong> (e.g., <code>I10 - Essential hypertension</code>).</p>
+<p>   - <strong>CPT / E&M Codes</strong> (e.g., <code>99214 - Moderate complexity visit</code>).</p>
+<p>   - Rendered as interactive code cards with one-tap clipboard copy buttons.</p>
+<p>4. <strong>Auto-Polling:</strong> <code>NoteReviewScreen</code> automatically polls the backend every 3 seconds while notes are in the drafting/transcribing state.</p>
+<div class="spacer"></div>
+<hr/>
+<div class="spacer"></div>
+<h2>4. Database Schema & Migrations</h2>
+<div class="spacer"></div>
+<p>Database is managed by <code>AppDatabase</code> (<code>lib/database.dart</code>) at version <strong>4</strong>:</p>
+<div class="spacer"></div>
+<li><strong><code>users</code></strong>: Clinician accounts, usernames, PBKDF2 password hashes, roles.</li>
+<li><strong><code>patients</code></strong>: Patient demographics, MRNs, DOB, specialties, emergency contacts.</li>
+<li><strong><code>recordings</code></strong>: Audio metadata, encrypted paths (<code>.enc</code>), upload status (<code>pending</code> / <code>uploaded</code>).</li>
+<li><strong><code>audit_logs</code></strong>: Compliance audit trail with <code>synced</code> flag (0 = local only, 1 = shipped to server).</li>
+<li><strong><code>appointments</code></strong>: Scheduled visits, calendar times, visit types.</li>
+<div class="spacer"></div>
+<hr/>
+<div class="spacer"></div>
+<h2>5. Development & Testing Commands</h2>
+<div class="spacer"></div>
+<li><strong>Run all tests:</strong></li>
+<p>  <code></code>`powershell</p>
+<p>  & "D:\flutter\bin\flutter.bat" test</p>
+<p>  <code></code>`</p>
+<li><strong>Run static analysis:</strong></li>
+<p>  <code></code>`powershell</p>
+<p>  & "D:\flutter\bin\flutter.bat" analyze</p>
+<p>  <code></code>`</p>
+<li><strong>Build with custom backend URL:</strong></li>
+<p>  <code></code>`powershell</p>
+<p>  & "D:\flutter\bin\flutter.bat" run --dart-define=API_BASE_URL="https://app.notenra.com/api"</p>
+<p>  <code></code>`</p>
+</body>
+</html>

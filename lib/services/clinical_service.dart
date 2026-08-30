@@ -363,9 +363,20 @@ class ClinicalService extends ChangeNotifier {
   /// `visit.note`. Returns true once a note is present (already cached or just
   /// fetched). No-op offline. Never throws — failures surface as a still-empty
   /// note so the screen can show a retry instead of spinning forever.
-  Future<bool> ensureNote(String visitId) async {
-    if (visitById(visitId)?.note != null) return true; // already loaded
-    if (!connectivity.online.value) return false;
+  Future<bool> ensureNote(String visitId, {bool force = false}) async {
+    if (!force && visitById(visitId)?.note != null) return true; // already loaded
+    if (!connectivity.online.value && !_backend.isLive) {
+      // In demo mode without network check, still allow loading from mock backend
+      try {
+        final fresh = await _backend.getVisit(visitId);
+        _upsert(fresh);
+        notifyListeners();
+        return fresh.note != null;
+      } catch (_) {
+        return false;
+      }
+    }
+    if (!connectivity.online.value && _backend.isLive) return false;
     try {
       final fresh = await _backend.getVisit(visitId);
       final current = visitById(visitId);
@@ -470,7 +481,8 @@ class ClinicalService extends ChangeNotifier {
       final reuseId = (existingVisitId != null && existingVisitId.isNotEmpty)
           ? existingVisitId
           : (_openUnrecordedVisitId(patientId) ??
-              recordedVisitForPatient(patientId)?.id);
+              recordedVisitForPatient(patientId)?.id ??
+              latestVisitForPatient(patientId)?.id);
 
       Visit visit;
       if (reuseId != null && !_isLocalId(reuseId)) {
@@ -527,10 +539,9 @@ class ClinicalService extends ChangeNotifier {
       _upsert(visit);
       notifyListeners();
 
-      // Upload through the offline-safe outbox. Only reflect "with scribe" when
-      // the upload ACTUALLY succeeded — otherwise the visit stays "pending
-      // upload" and the queue retries, so the doctor is never falsely told the
-      // recording reached the scribe. patientId/name ride along so the outbox
+      // Upload through the offline-safe outbox. Only reflect "with scribe" / "ready"
+      // when the upload ACTUALLY succeeded — otherwise the visit stays "pending
+      // upload" and the queue retries. patientId/name ride along so the outbox
       // can create the real visit if this is a local shell.
       AppLog.log('REC', 'enqueue upload visit=${visit.id}');
       final uploaded = await _sync.enqueue(SyncOp(
@@ -547,11 +558,15 @@ class ClinicalService extends ChangeNotifier {
           'enqueue done uploaded=$uploaded status=${visitById(visit.id)?.status.name}');
       if (uploaded) {
         try {
-          // Pull the real server state (audio now attached -> with scribe).
+          // Pull the real server state (audio now attached -> AI note / with scribe).
           final fresh = await _backend.getVisit(visit.id);
           visit = fresh.copyWith(localAudioPath: audioPath);
         } catch (_) {
-          visit = visit.copyWith(status: VisitStatus.withScribe);
+          visit = visit.copyWith(
+            status: visit.note != null
+                ? VisitStatus.readyForReview
+                : VisitStatus.withScribe,
+          );
         }
         _upsert(visit);
         notifyListeners();
