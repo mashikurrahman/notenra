@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:notenra/api/mock_backend.dart';
 import 'package:notenra/api/token_store.dart';
@@ -11,6 +12,29 @@ import 'package:provider/provider.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUpAll(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+      const MethodChannel('com.llfbandit.record/messages'),
+      (MethodCall methodCall) async {
+        if (methodCall.method == 'create') {
+          return 'mock_recorder_id';
+        }
+        if (methodCall.method == 'hasPermission') {
+          return true;
+        }
+        return null;
+      },
+    );
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+      const MethodChannel('plugins.it_nomads.com/flutter_secure_storage'),
+      (MethodCall methodCall) async {
+        return null;
+      },
+    );
+  });
 
   group('AI Note UI & Review Flow Widgets', () {
     late MockBackend backend;
