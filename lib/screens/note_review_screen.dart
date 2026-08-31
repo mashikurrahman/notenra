@@ -119,6 +119,13 @@ List<_SoapSection> _parseSoap(String text) {
   return result;
 }
 
+/// Helper to parse note text into a key-value map of sections.
+Map<String, String> parseNoteSections(String text) {
+  final sections = _parseSoap(text);
+  return {for (final s in sections) s.key: s.content};
+}
+
+
 /// The clinician's review of a scribe-completed note:
 ///   read -> small edits yourself  OR  request changes (comment to scribe)
 ///   OR  approve as final.
