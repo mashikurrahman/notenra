@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:notenra/api/clinical_models.dart';
 import 'package:notenra/api/mock_backend.dart';
 import 'package:notenra/api/token_store.dart';
 import 'package:notenra/app_state.dart';
@@ -35,6 +34,9 @@ void main() {
       final readyVisit = await backend.uploadAudio(visitId: visit.id, audioPath: '/tmp/rec.m4a');
       expect(readyVisit.note, isNotNull);
 
+      // Refresh clinical service cache so it has the visit loaded
+      await clinical.refresh();
+
       // 2. Pump NoteReviewScreen
       await tester.pumpWidget(
         MultiProvider(
@@ -43,7 +45,7 @@ void main() {
             ChangeNotifierProvider.value(value: clinical),
           ],
           child: MaterialApp(
-            home: NoteReviewScreen(visit: readyVisit),
+            home: NoteReviewScreen(visitId: readyVisit.id),
           ),
         ),
       );
@@ -77,13 +79,13 @@ void main() {
       expect(find.text('Approve & Sign Note'), findsOneWidget);
     });
 
-    testWidgets('PatientVisitScreen displays "View AI Note" CTA banner when note is ready', (tester) async {
+    testWidgets('PatientVisitScreen displays "AI Clinical Note Ready" CTA banner when note is ready', (tester) async {
       // 1. Setup visit that is readyForReview
       final visit = await backend.createVisit(patientId: 2, patientName: 'Ford Prefect');
-      final readyVisit = await backend.uploadAudio(visitId: visit.id, audioPath: '/tmp/rec2.m4a');
+      await backend.uploadAudio(visitId: visit.id, audioPath: '/tmp/rec2.m4a');
 
       // Refresh clinical service cache
-      await clinical.refreshVisits();
+      await clinical.refresh();
 
       // 2. Pump PatientVisitScreen
       await tester.pumpWidget(
@@ -92,21 +94,18 @@ void main() {
             ChangeNotifierProvider.value(value: appState),
             ChangeNotifierProvider.value(value: clinical),
           ],
-          child: MaterialApp(
+          child: const MaterialApp(
             home: PatientVisitScreen(
               patientId: 2,
-              patientName: 'Ford Prefect',
-              existingVisit: readyVisit,
             ),
           ),
         ),
       );
       await tester.pumpAndSettle();
 
-      // 3. Verify "View AI Note" banner is displayed
-      expect(find.text('AI Note Ready for Review'), findsOneWidget);
-      expect(find.text('View AI Note'), findsOneWidget);
-      expect(find.byIcon(Icons.auto_awesome), findsWidgets);
+      // 3. Verify AI Note banner is displayed
+      expect(find.text('AI Clinical Note Ready'), findsOneWidget);
+      expect(find.text('Review'), findsOneWidget);
     });
   });
 }
