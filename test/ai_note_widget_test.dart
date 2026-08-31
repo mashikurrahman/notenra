@@ -73,7 +73,8 @@ void main() {
           ),
         ),
       );
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump(const Duration(milliseconds: 300));
 
       // 3. Verify Patient header & Status pill
       expect(find.text('Arthur Dent'), findsOneWidget);
@@ -89,7 +90,8 @@ void main() {
 
       // 5. Tap the "Codes (ICD/CPT)" tab
       await tester.tap(find.text('Codes (ICD/CPT)'));
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump(const Duration(milliseconds: 300));
 
       // 6. Verify Medical Codes chips & descriptions
       expect(find.text('ICD-10 Diagnosis Codes'), findsOneWidget);
@@ -125,7 +127,8 @@ void main() {
           ),
         ),
       );
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump(const Duration(milliseconds: 300));
 
       // 3. Verify AI Note banner is displayed
       expect(find.text('AI Clinical Note Ready'), findsOneWidget);
