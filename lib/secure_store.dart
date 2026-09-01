@@ -23,8 +23,17 @@ class SecureStore {
 
   final AndroidOptions? aOptions;
 
+  // `encryptedSharedPreferences` is intentionally omitted: flutter_secure_storage
+  // v10 already stores values under strong custom ciphers on Android and
+  // deprecated that flag (it's ignored and slated for removal in v11).
+  // `resetOnError` recovers the store if the platform keystore entry is corrupt
+  // rather than throwing on every read.
+  static const _defaultAndroidOptions = AndroidOptions(
+    resetOnError: true,
+  );
+
   FlutterSecureStorage get _ks =>
-      FlutterSecureStorage(aOptions: aOptions ?? const AndroidOptions());
+      FlutterSecureStorage(aOptions: aOptions ?? _defaultAndroidOptions);
 
   // Shared across every SecureStore instance; RAM-only, lost on app exit.
   static final Map<String, String> _mem = {};

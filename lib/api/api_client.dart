@@ -54,7 +54,7 @@ class ApiClient {
   // would be missed, expiring the session during a visit.
   static const sessionCookieName = String.fromEnvironment(
       'SESSION_COOKIE_NAME',
-      defaultValue: 'notenra_session');
+      defaultValue: 'noterna_session');
 
   /// Exact match on the configured name, with the optional cookie-prefix forms.
   static final RegExp _exactSessionRe =

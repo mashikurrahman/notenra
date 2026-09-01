@@ -434,7 +434,7 @@ const htmlContent = `<!DOCTYPE html>
   <h2>7. Pre-Launch Handoff Checklist</h2>
   <ul class="checklist">
     <li class="checked"><strong>Production API Endpoint:</strong> Verified live and responding at <code>https://app.notenra.com/api</code>.</li>
-    <li class="checked"><strong>Test & Code Health:</strong> 0 static analysis issues, 40/40 unit tests passing.</li>
+    <li class="checked"><strong>Test & Code Health:</strong> 0 static analysis issues, 47/47 unit tests passing.</li>
     <li class="checked"><strong>Android Signing Key:</strong> <code>upload-keystore.jks</code> configured in <code>android/key.properties</code>.</li>
     <li class="pending"><strong>Apple App Store Connect:</strong> In <code>codemagic.yaml</code>, update <code>APP_STORE_APPLE_ID</code> with your numeric ID and connect the App Store API Key.</li>
     <li class="pending"><strong>Store Listings & Data Safety:</strong> Complete App Store / Play Store questionnaires (Audio is encrypted in transit and ephemeral).</li>

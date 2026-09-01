@@ -22,7 +22,7 @@ The codebase has undergone a complete production readiness audit, static analysi
 | Verification Suite | Result | Details |
 | :--- | :---: | :--- |
 | **Static Analysis (`flutter analyze`)** | **PASSED** | 0 errors, 0 warnings, 0 lint warnings |
-| **Unit & Integration Suite (`flutter test`)** | **PASSED** | **40 / 40 test assertions passing** |
+| **Unit & Integration Suite (`flutter test`)** | **PASSED** | **47 / 47 test assertions passing** |
 | **Audio Upload Retry & Marking** | **PASSED** | Verifies FIFO sync engine, timeout recovery, and duplicate prevention |
 | **HIPAA Audit Scrubbing** | **PASSED** | Validates patient MRN/name redaction in audit payloads |
 | **Database Encryption & Retention** | **PASSED** | Validates v3 → v4 SQLCipher migrations and purged sync entries |
@@ -121,7 +121,7 @@ flutter build ipa --release --dart-define=DEMO_ACCOUNTS=false
 ## 8. Incoming Developer Checklist Before Store Release
 
 - [x] **API Connectivity**: Verified live against `https://app.notenra.com/api`.
-- [x] **Test Suite**: Verified 40/40 tests passing.
+- [x] **Test Suite**: Verified 47/47 tests passing.
 - [x] **Static Analysis**: Verified 0 errors / 0 warnings.
 - [x] **Android Keystore**: `upload-keystore.jks` and `android/key.properties` verified.
 - [ ] **Codemagic Integration (iOS)**: In `codemagic.yaml`, replace placeholder `APP_STORE_APPLE_ID: 0000000000` with the numeric Apple ID from App Store Connect, and connect the App Store Connect API Key.

@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../api/clinical_models.dart';
+import '../app_state.dart';
 import '../services/clinical_service.dart';
 import '../status_ui.dart';
 import '../theme.dart';
@@ -392,7 +393,8 @@ class _ReviewQueueScreenState extends State<ReviewQueueScreen> {
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
                       StatusPill(label: s.label, color: s.color, icon: s.icon),
-                      if (_turnaroundPill(v) != null) _turnaroundPill(v)!,
+                      if (_turnaroundPill(context, v) != null)
+                        _turnaroundPill(context, v)!,
                     ],
                   ),
                 ],
@@ -407,7 +409,8 @@ class _ReviewQueueScreenState extends State<ReviewQueueScreen> {
     );
   }
 
-  Widget? _turnaroundPill(Visit v) {
+  Widget? _turnaroundPill(BuildContext context, Visit v) {
+    final isAi = context.read<AppState>().isAiOnly;
     if (v.status == VisitStatus.readyForReview) {
       final elapsed = DateTime.now().millisecondsSinceEpoch - v.createdAt;
       if (elapsed > 0) {
@@ -422,10 +425,10 @@ class _ReviewQueueScreenState extends State<ReviewQueueScreen> {
         );
       }
     } else if (v.status == VisitStatus.withScribe) {
-      return const StatusPill(
-        label: 'Scribe processing',
-        color: Nx.warning,
-        icon: Icons.hourglass_top,
+      return StatusPill(
+        label: isAi ? 'AI generating' : 'Scribe processing',
+        color: isAi ? Nx.primary : Nx.warning,
+        icon: isAi ? Icons.auto_awesome : Icons.hourglass_top,
       );
     }
     return null;

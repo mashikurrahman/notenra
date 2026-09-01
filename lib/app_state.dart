@@ -139,6 +139,7 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
   User? _currentUser;
   User? get currentUser => _currentUser;
   bool get isAdmin => _currentUser?.role == 'admin';
+  bool get isAiOnly => _currentUser?.isAiOnly ?? false;
 
   // First-login app tour. Default true so an established user never sees a flash
   // before [_loadConfig] resolves; a first-timer is flipped to false on load.
@@ -349,13 +350,15 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
     }
 
     // Live mode authenticates against the real API (/auth/login -> JWT).
-    if (_live) return _loginLive(username.trim(), password, key);
+    if (_live) return _loginLive(username.trim().toLowerCase(), password, key);
 
     final user = await _db.getUserByUsername(username.trim());
     final ok = user != null && Security.verifyPassword(password, user.passwordHash);
     if (ok) {
       _failedAttempts.remove(key);
       _lockedUntil.remove(key);
+      // AI-only is a real account attribute (stored on the user row), not a
+      // name pattern — trust the DB value.
       _currentUser = user;
       _biometricUnlocked = false;
       await _refreshPatients();
@@ -390,6 +393,10 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
         if (await _rejectIfNotClinician(u)) return false;
         _failedAttempts.remove(key);
         _lockedUntil.remove(key);
+        // The server returns `ai_only` on the user object (see GET /api/auth/me
+        // and POST /api/auth/login). It governs whether this clinician's visits
+        // skip the scribe step and are drafted straight from AI.
+        final isAiOnly = u['ai_only'] == true || u['ai_only'] == 1;
         _currentUser = User(
           id: _asInt(u['id']),
           username: (u['email'] ?? email).toString(),
@@ -397,6 +404,7 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
           fullName: (u['name'] ?? email).toString(),
           provider: 'live',
           role: (u['role'] ?? 'clinician').toString(),
+          isAiOnly: isAiOnly,
         );
         _biometricUnlocked = false;
         // The token is now saved, so load the clinician's visits/notes. Without

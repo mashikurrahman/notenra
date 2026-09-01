@@ -192,20 +192,34 @@ class _LoginScreenState extends State<LoginScreen> {
                               style:
                                   TextStyle(color: Nx.muted, fontSize: 13)),
                           const SizedBox(height: 20),
-                          _field(_userCtrl, 'Username / email',
-                              Icons.person_outline),
+                          _field(
+                            _userCtrl,
+                            'Username / email',
+                            Icons.person_outline,
+                            keyboardType: TextInputType.emailAddress,
+                            textCapitalization: TextCapitalization.none,
+                            autocorrect: false,
+                            enableSuggestions: false,
+                          ),
                           const SizedBox(height: 14),
-                          _field(_passCtrl, 'Password', Icons.lock_outline,
-                              obscure: _obscure,
-                              suffix: IconButton(
-                                icon: Icon(
-                                    _obscure
-                                        ? Icons.visibility_off_outlined
-                                        : Icons.visibility_outlined,
-                                    color: Nx.muted),
-                                onPressed: () =>
-                                    setState(() => _obscure = !_obscure),
-                              )),
+                          _field(
+                            _passCtrl,
+                            'Password',
+                            Icons.lock_outline,
+                            obscure: _obscure,
+                            textCapitalization: TextCapitalization.none,
+                            autocorrect: false,
+                            enableSuggestions: false,
+                            suffix: IconButton(
+                              icon: Icon(
+                                  _obscure
+                                      ? Icons.visibility_off_outlined
+                                      : Icons.visibility_outlined,
+                                  color: Nx.muted),
+                              onPressed: () =>
+                                  setState(() => _obscure = !_obscure),
+                            ),
+                          ),
                           const SizedBox(height: 6),
                           _rememberEmailToggle(),
                           const SizedBox(height: 16),
@@ -382,10 +396,19 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Widget _field(TextEditingController c, String label, IconData icon,
-      {bool obscure = false, Widget? suffix}) {
+      {bool obscure = false,
+      Widget? suffix,
+      TextInputType? keyboardType,
+      TextCapitalization textCapitalization = TextCapitalization.none,
+      bool autocorrect = true,
+      bool enableSuggestions = true}) {
     return TextField(
       controller: c,
       obscureText: obscure,
+      keyboardType: keyboardType,
+      textCapitalization: textCapitalization,
+      autocorrect: autocorrect,
+      enableSuggestions: enableSuggestions,
       style: const TextStyle(color: Nx.secondary),
       decoration: InputDecoration(
         labelText: label,

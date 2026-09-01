@@ -71,6 +71,17 @@ app.*.map.json
 .env
 *.env
 
+# Local, ad-hoc backend probe/seed scripts — these hold hardcoded test
+# credentials and must NEVER be committed. Keep dev tooling that ships in the
+# repo (render_*, generate_pdf_report, seed_patients) tracked as usual.
+tool/probe_backend.js
+tool/test_live_notes.js
+tool/seed_exact_patients.js
+tool/check_note_gen.js
+tool/check_schedule.js
+tool/find_apis.js
+tool/inspect_user_package.js
+
 # Local build artifacts / screenshots (not source)
 dist/
 release_builds/

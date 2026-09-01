@@ -46,7 +46,14 @@ class ApiConfig {
 
   static Future<void> load() async {
     final saved = await _secure.read(key: _key);
-    if (saved != null && saved.isNotEmpty) _baseUrl = saved;
+    if (saved != null && saved.isNotEmpty) {
+      if (saved == 'https://notenra.com/api') {
+        _baseUrl = defaultBaseUrl;
+        await _secure.delete(key: _key);
+      } else {
+        _baseUrl = saved;
+      }
+    }
   }
 
   static Future<void> setBaseUrl(String url) async {

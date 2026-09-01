@@ -8,6 +8,7 @@ class User {
   final String fullName;
   final String provider;
   final String role; // 'clinician' | 'admin'
+  final bool isAiOnly;
 
   User({
     this.id = 0,
@@ -16,6 +17,7 @@ class User {
     required this.fullName,
     this.provider = 'local',
     this.role = 'clinician',
+    this.isAiOnly = false,
   });
 
   bool get isAdmin => role == 'admin';
@@ -36,15 +38,27 @@ class User {
         fullName: m['fullName'] as String,
         provider: (m['provider'] as String?) ?? 'local',
         role: (m['role'] as String?) ?? 'clinician',
+        isAiOnly: m['isAiOnly'] == 1 ||
+            m['isAiOnly'] == true ||
+            m['ai_only'] == true ||
+            m['aiOnly'] == true ||
+            m['package'] == 'ai_only',
       );
 
-  User copyWith({String? passwordHash, String? fullName, String? role}) => User(
+  User copyWith({
+    String? passwordHash,
+    String? fullName,
+    String? role,
+    bool? isAiOnly,
+  }) =>
+      User(
         id: id,
         username: username,
         passwordHash: passwordHash ?? this.passwordHash,
         fullName: fullName ?? this.fullName,
         provider: provider,
         role: role ?? this.role,
+        isAiOnly: isAiOnly ?? this.isAiOnly,
       );
 }
 

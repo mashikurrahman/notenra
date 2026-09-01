@@ -175,13 +175,17 @@ class _PatientVisitScreenState extends State<PatientVisitScreen>
     }
   }
 
-  Future<bool?> _confirmStop() => showDialog<bool>(
+  Future<bool?> _confirmStop() {
+    final isAi = context.read<AppState>().isAiOnly;
+    return showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
           title: const Text('Stop recording?'),
-          content: const Text(
-              'This will save the audio and queue it to upload to the scribe. '
-              'The note will appear in the Notes tab once generated.'),
+          content: Text(isAi
+              ? 'This saves the audio and uploads it. The AI note is generated '
+                  'automatically and appears here to review, edit and lock.'
+              : 'This will save the audio and queue it to upload to the scribe. '
+                  'The note will appear in the Notes tab once generated.'),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
@@ -195,6 +199,7 @@ class _PatientVisitScreenState extends State<PatientVisitScreen>
           ],
         ),
       );
+  }
 
   /// Stop recording. The recording is saved and shown immediately; securing it
   /// at rest and sending it to the scribe happen in the background (offline-safe)
@@ -214,13 +219,16 @@ class _PatientVisitScreenState extends State<PatientVisitScreen>
     final visit = svc.recordedVisitForPatient(widget.patientId) ??
         svc.latestVisitForPatient(widget.patientId);
     final visitId = visit?.id ?? state.openVisitFor(widget.patientId);
+    final isAi = state.isAiOnly;
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: const Text('Recording saved. AI note generation ready.'),
+        content: Text(isAi
+            ? 'Recording saved. Your AI note is being generated.'
+            : 'Recording saved. Securing audio and sending to scribe.'),
         action: (visitId != null && visitId.isNotEmpty)
             ? SnackBarAction(
-                label: 'View AI Note',
+                label: isAi ? 'View progress' : 'View Visit',
                 textColor: Colors.white,
                 onPressed: () {
                   Navigator.of(context).push(
@@ -295,6 +303,7 @@ class _PatientVisitScreenState extends State<PatientVisitScreen>
   }
 
   Widget _aiNoteBanner(AppState state, ClinicalService svc) {
+    final isAiOnly = state.isAiOnly;
     final visit = svc.recordedVisitForPatient(widget.patientId) ??
         svc.latestVisitForPatient(widget.patientId);
     final count = state.recordings.isNotEmpty
@@ -305,14 +314,56 @@ class _PatientVisitScreenState extends State<PatientVisitScreen>
     }
 
     final hasNote = visit?.note != null && visit!.note!.content.trim().isNotEmpty;
-    final isProcessing = visit?.status == VisitStatus.withScribe ||
-        visit?.status == VisitStatus.pendingUpload;
+    // The list refresh carries the visit status but not the note body, so treat
+    // a visit the server has already marked ready/approved as "note ready" even
+    // before the body is lazily fetched — otherwise the banner briefly reverts
+    // to a stale state right after the poll flips the status.
+    final noteReady = hasNote ||
+        visit?.status == VisitStatus.readyForReview ||
+        visit?.status == VisitStatus.approved ||
+        visit?.status == VisitStatus.syncedToEhr;
+    final isProcessing = !noteReady &&
+        (visit?.status == VisitStatus.withScribe ||
+            visit?.status == VisitStatus.pendingUpload);
     final targetId = visit?.id ?? state.openVisitFor(widget.patientId);
+
+    // AI-only: the phone never runs the model. Audio uploads, the server drafts
+    // the note, and it syncs back — so there are only two meaningful states,
+    // "generating" and "ready to review". The scribe flow keeps its own wording.
+    final title = isAiOnly
+        ? (noteReady ? 'AI Clinical Note Ready' : 'AI Generating Note…')
+        : (noteReady
+            ? 'Clinical Note Ready'
+            : isProcessing
+                ? 'With Scribe'
+                : 'Recording with Scribe');
+
+    final statusLabel = isAiOnly
+        ? (noteReady ? 'Ready' : 'Processing')
+        : (noteReady ? 'Ready' : (isProcessing ? 'Scribe' : 'Queued'));
+
+    final subtitle = isAiOnly
+        ? (noteReady
+            ? 'AI note ready from $count recording${count == 1 ? '' : 's'}. Tap to review, edit & lock.'
+            : 'Your recording is uploading and the AI is drafting the note…')
+        : (noteReady
+            ? 'Scribe completed note from $count recording${count == 1 ? '' : 's'}. Tap to review.'
+            : isProcessing
+                ? 'Scribe is preparing clinical note… Tap to view status.'
+                : 'Consultation recording uploaded to scribe queue.');
+
+    final buttonLabel = isAiOnly
+        ? (noteReady ? 'Review Note' : 'View Progress')
+        : (noteReady
+            ? 'Review'
+            : isProcessing
+                ? 'View Status'
+                : 'View Visit');
 
     return NxCard(
       elevated: true,
-      color: hasNote ? Nx.accentSoft : Nx.card,
-      borderColor: hasNote
+      color: noteReady ? Nx.accentSoft : Nx.card,
+      borderColor: noteReady
           ? Nx.accent.withValues(alpha: 0.35)
           : Nx.primary.withValues(alpha: 0.30),
       padding: const EdgeInsets.all(Nx.s4),
@@ -329,14 +380,16 @@ class _PatientVisitScreenState extends State<PatientVisitScreen>
             width: 44,
             height: 44,
             decoration: BoxDecoration(
-              color: hasNote
+              color: noteReady
                   ? Nx.accent.withValues(alpha: 0.15)
                   : Nx.primary.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(Nx.rSm),
             ),
             child: Icon(
-              hasNote ? Icons.description : Icons.auto_awesome,
-              color: hasNote ? Nx.accent : Nx.primary,
+              noteReady
+                  ? Icons.description
+                  : (isAiOnly ? Icons.auto_awesome : Icons.assignment_turned_in),
+              color: noteReady ? Nx.accent : Nx.primary,
               size: 22,
             ),
           ),
@@ -350,11 +403,7 @@ class _PatientVisitScreenState extends State<PatientVisitScreen>
                   children: [
                     Flexible(
                       child: Text(
-                        hasNote
-                            ? 'AI Clinical Note Ready'
-                            : isProcessing
-                                ? 'AI Generating Note…'
-                                : 'Generate AI Note',
+                        title,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
@@ -366,19 +415,15 @@ class _PatientVisitScreenState extends State<PatientVisitScreen>
                     ),
                     const SizedBox(width: 6),
                     StatusPill(
-                      label: hasNote ? 'Ready' : (isProcessing ? 'Processing' : 'AI'),
-                      color: hasNote ? Nx.accent : Nx.primary,
+                      label: statusLabel,
+                      color: noteReady ? Nx.accent : Nx.primary,
                       solid: false,
                     ),
                   ],
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  hasNote
-                      ? 'Generated from $count recording${count == 1 ? '' : 's'}. Tap to review.'
-                      : isProcessing
-                          ? 'Analyzing $count recording${count == 1 ? '' : 's'}… Tap to view progress.'
-                          : 'Generate SOAP note from $count recording${count == 1 ? '' : 's'}.',
+                  subtitle,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(color: Nx.secondary, fontSize: 12),
@@ -389,7 +434,7 @@ class _PatientVisitScreenState extends State<PatientVisitScreen>
           const SizedBox(width: Nx.s2),
           FilledButton(
             style: FilledButton.styleFrom(
-              backgroundColor: hasNote ? Nx.accent : Nx.primary,
+              backgroundColor: noteReady ? Nx.accent : Nx.primary,
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
               minimumSize: Size.zero,
@@ -403,11 +448,7 @@ class _PatientVisitScreenState extends State<PatientVisitScreen>
                     )
                 : null,
             child: Text(
-              hasNote
-                  ? 'Review'
-                  : isProcessing
-                      ? 'View'
-                      : 'Generate',
+              buttonLabel,
               style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5),
             ),
           ),

@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../api/clinical_models.dart';
+import '../app_state.dart';
 import '../services/clinical_service.dart';
 import '../status_ui.dart';
 import '../theme.dart';
@@ -28,95 +29,173 @@ class _SoapSection {
   });
 }
 
+/// A canonical section bucket the review UI renders as a tab.
+class _SectionDef {
+  final String key;
+  final String title;
+  final Color color;
+  final IconData icon;
+  const _SectionDef(this.key, this.title, this.color, this.icon);
+}
+
+const _secSubjective = _SectionDef(
+    'SUBJECTIVE', 'Subjective', Color(0xFF2563EB), Icons.record_voice_over);
+const _secObjective =
+    _SectionDef('OBJECTIVE', 'Objective', Color(0xFF0D9488), Icons.biotech);
+const _secAssessment = _SectionDef(
+    'ASSESSMENT', 'Assessment', Color(0xFFD97706), Icons.analytics_outlined);
+const _secPlan =
+    _SectionDef('PLAN', 'Plan', Color(0xFF10B981), Icons.playlist_add_check);
+const _secCodes = _SectionDef(
+    'CODES', 'Medical Codes & Billing', Color(0xFF7C3AED), Icons.receipt_long);
+
+/// Every section header we know how to bucket, mapped to (canonical section,
+/// human sub-label). Two note formats flow through here and both are folded
+/// into the same five buckets so a note reads identically wherever it came from:
+///
+///   * the mock backend's SOAP note — SUBJECTIVE / OBJECTIVE / ASSESSMENT /
+///     PLAN / MEDICAL CODES & BILLING;
+///   * the live server's Anthropic draft (buildAnthropicNotePrompt) — the seven
+///     fixed headers CHIEF COMPLAINT / HISTORY OF PRESENT ILLNESS (HPI) /
+///     PHYSICAL EXAMINATION (PE) / IMAGING / ASSESSMENT & PLAN (A&P) /
+///     ICD-10 CODES / E&M CODE.
+///
+/// Keys are the header text normalized by [_matchHeader] (lowercased, a trailing
+/// "(ABBR)" and the colon stripped). When several source headers share a bucket
+/// (CHIEF COMPLAINT + HPI -> Subjective; ICD-10 CODES + E&M CODE -> Codes) their
+/// contents are concatenated in order under their sub-labels.
+const Map<String, (_SectionDef, String)> _headerMap = {
+  // Subjective
+  'subjective': (_secSubjective, 'Subjective'),
+  'chief complaint': (_secSubjective, 'Chief Complaint'),
+  'history of present illness': (_secSubjective, 'History of Present Illness'),
+  'hpi': (_secSubjective, 'History of Present Illness'),
+  'history': (_secSubjective, 'History'),
+  'review of systems': (_secSubjective, 'Review of Systems'),
+  'ros': (_secSubjective, 'Review of Systems'),
+  // Objective
+  'objective': (_secObjective, 'Objective'),
+  'physical examination': (_secObjective, 'Physical Examination'),
+  'physical exam': (_secObjective, 'Physical Examination'),
+  'pe': (_secObjective, 'Physical Examination'),
+  'examination': (_secObjective, 'Examination'),
+  'vitals': (_secObjective, 'Vitals'),
+  'vital signs': (_secObjective, 'Vitals'),
+  'imaging': (_secObjective, 'Imaging'),
+  // Assessment / Plan
+  'assessment & plan': (_secAssessment, 'Assessment & Plan'),
+  'assessment and plan': (_secAssessment, 'Assessment & Plan'),
+  'assessment/plan': (_secAssessment, 'Assessment & Plan'),
+  'a&p': (_secAssessment, 'Assessment & Plan'),
+  'assessment': (_secAssessment, 'Assessment'),
+  'impression': (_secAssessment, 'Impression'),
+  'plan': (_secPlan, 'Plan'),
+  // Codes / billing
+  'icd-10 codes': (_secCodes, 'ICD-10 Codes'),
+  'icd-10-cm diagnosis codes': (_secCodes, 'ICD-10 Diagnosis Codes'),
+  'icd-10-cm': (_secCodes, 'ICD-10 Codes'),
+  'icd-10 & cpt codes': (_secCodes, 'Medical Codes'),
+  'icd-10 & cpt': (_secCodes, 'Medical Codes'),
+  'diagnosis codes': (_secCodes, 'ICD-10 Diagnosis Codes'),
+  'e&m code': (_secCodes, 'E&M / CPT Codes'),
+  'e&m codes': (_secCodes, 'E&M / CPT Codes'),
+  'e&m': (_secCodes, 'E&M / CPT Codes'),
+  'cpt / e&m procedure codes': (_secCodes, 'CPT / E&M Codes'),
+  'cpt / e&m codes': (_secCodes, 'CPT / E&M Codes'),
+  'cpt / e&m': (_secCodes, 'CPT / E&M Codes'),
+  'cpt': (_secCodes, 'CPT Codes'),
+  'procedure codes': (_secCodes, 'Procedure Codes'),
+  'billing codes': (_secCodes, 'Billing Codes'),
+  'medical codes & billing': (_secCodes, 'Medical Codes & Billing'),
+  'medical codes': (_secCodes, 'Medical Codes & Billing'),
+  'billing & coding': (_secCodes, 'Medical Codes & Billing'),
+  'billing & codes': (_secCodes, 'Medical Codes & Billing'),
+  'billing and coding': (_secCodes, 'Medical Codes & Billing'),
+  'billing': (_secCodes, 'Medical Codes & Billing'),
+  'coding': (_secCodes, 'Medical Codes & Billing'),
+  'codes': (_secCodes, 'Medical Codes & Billing'),
+};
+
+/// If [line] is a recognized section header, returns its bucket, sub-label and
+/// any inline content after the colon; otherwise null.
+///
+/// A line counts as a header only when its pre-colon text is a known phrase AND
+/// is written in UPPERCASE. That single rule cleanly separates real section
+/// headers (`SUBJECTIVE:`, `CHIEF COMPLAINT:`, `ICD-10 CODES:` — both the mock
+/// and the live server emit these in caps) from the Title-Case sub-fields that
+/// legitimately appear inside a section's prose (`Chief Complaint:`, `Vitals:`,
+/// `ICD-10-CM Diagnosis Codes:`), which must stay as content rather than split
+/// the note into empty pieces.
+({_SectionDef def, String label, String rest})? _matchHeader(String line) {
+  final trimmed = line.trim();
+  if (trimmed.isEmpty) return null;
+
+  var headPart = trimmed;
+  var rest = '';
+  final colon = trimmed.indexOf(':');
+  if (colon != -1) {
+    headPart = trimmed.substring(0, colon).trim();
+    rest = trimmed.substring(colon + 1).trim();
+  }
+  if (headPart.isEmpty) return null;
+
+  // Uppercase gate: no lowercase letters, and at least one cased letter (so a
+  // line of pure digits/punctuation is never mistaken for a header).
+  final isUpper = headPart == headPart.toUpperCase();
+  final hasLetter = headPart.toUpperCase() != headPart.toLowerCase();
+  if (!isUpper || !hasLetter) return null;
+
+  final norm = headPart
+      .replaceAll(RegExp(r'\s*\([^)]*\)\s*$'), '') // trailing "(ABBR)"
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim()
+      .toLowerCase();
+
+  final hit = _headerMap[norm];
+  if (hit == null) return null;
+  return (def: hit.$1, label: hit.$2, rest: rest);
+}
+
 List<_SoapSection> _parseSoap(String text) {
-  final lines = text.split('\n');
-  final result = <_SoapSection>[];
-  String? curKey;
-  String? curTitle;
-  Color curColor = Nx.primary;
-  IconData curIcon = Icons.notes;
-  final buf = StringBuffer();
+  final order = <String>[];
+  final buffers = <String, StringBuffer>{};
+  final defs = <String, _SectionDef>{};
+  _SectionDef? cur;
 
-  void flush() {
-    final key = curKey;
-    if (key != null && buf.isNotEmpty) {
-      result.add(_SoapSection(
-        key: key,
-        title: curTitle ?? key,
-        content: buf.toString().trim(),
-        color: curColor,
-        icon: curIcon,
-      ));
-      buf.clear();
-    }
-  }
-
-  for (final line in lines) {
-    final t = line.trim();
-    final lower = t.toLowerCase();
-    if (lower.startsWith('subjective:') || lower == 'subjective') {
-      flush();
-      curKey = 'SUBJECTIVE';
-      curTitle = 'Subjective';
-      curColor = const Color(0xFF2563EB);
-      curIcon = Icons.record_voice_over;
-      final rest = t.replaceFirst(RegExp(r'^subjective:?', caseSensitive: false), '').trim();
-      if (rest.isNotEmpty) buf.writeln(rest);
-    } else if (lower.startsWith('objective:') || lower == 'objective') {
-      flush();
-      curKey = 'OBJECTIVE';
-      curTitle = 'Objective';
-      curColor = const Color(0xFF0D9488);
-      curIcon = Icons.biotech;
-      final rest = t.replaceFirst(RegExp(r'^objective:?', caseSensitive: false), '').trim();
-      if (rest.isNotEmpty) buf.writeln(rest);
-    } else if (lower.startsWith('assessment:') || lower == 'assessment') {
-      flush();
-      curKey = 'ASSESSMENT';
-      curTitle = 'Assessment';
-      curColor = const Color(0xFFD97706);
-      curIcon = Icons.analytics_outlined;
-      final rest = t.replaceFirst(RegExp(r'^assessment:?', caseSensitive: false), '').trim();
-      if (rest.isNotEmpty) buf.writeln(rest);
-    } else if (lower.startsWith('plan:') || lower == 'plan') {
-      flush();
-      curKey = 'PLAN';
-      curTitle = 'Plan';
-      curColor = const Color(0xFF10B981);
-      curIcon = Icons.playlist_add_check;
-      final rest = t.replaceFirst(RegExp(r'^plan:?', caseSensitive: false), '').trim();
-      if (rest.isNotEmpty) buf.writeln(rest);
-    } else if (lower.startsWith('medical codes') ||
-        lower.startsWith('billing & coding') ||
-        lower.startsWith('billing & codes') ||
-        lower.startsWith('billing and coding') ||
-        lower.startsWith('billing:') ||
-        lower.startsWith('icd-10 & cpt') ||
-        lower.startsWith('coding:') ||
-        lower.startsWith('codes:') ||
-        lower == 'billing' ||
-        lower == 'codes') {
-      flush();
-      curKey = 'CODES';
-      curTitle = 'Medical Codes & Billing';
-      curColor = const Color(0xFF7C3AED);
-      curIcon = Icons.receipt_long;
-      final rest = t
-          .replaceFirst(
-              RegExp(
-                  r'^(medical codes & billing|medical codes|billing & coding|billing & codes|billing and coding|billing|icd-10 & cpt codes|icd-10 & cpt|coding|codes):?',
-                  caseSensitive: false),
-              '')
-          .trim();
-      if (rest.isNotEmpty) buf.writeln(rest);
-    } else {
-      if (curKey != null) {
-        buf.writeln(line);
+  for (final line in text.split('\n')) {
+    final m = _matchHeader(line);
+    if (m != null) {
+      final def = m.def;
+      cur = def;
+      final buf = buffers.putIfAbsent(def.key, () {
+        order.add(def.key);
+        defs[def.key] = def;
+        return StringBuffer();
+      });
+      // Keep the source header as an in-body sub-label when it differs from the
+      // bucket's own title, so merged buckets stay readable (e.g. a Subjective
+      // card showing "Chief Complaint:" then "History of Present Illness:").
+      if (m.label.toUpperCase() != def.title.toUpperCase()) {
+        if (buf.isNotEmpty) buf.writeln();
+        buf.writeln('${m.label}:');
       }
+      if (m.rest.isNotEmpty) buf.writeln(m.rest);
+    } else if (cur != null) {
+      buffers[cur.key]!.writeln(line);
     }
+    // Lines before the first recognized header are dropped, as before.
   }
-  flush();
-  return result;
+
+  return [
+    for (final key in order)
+      _SoapSection(
+        key: key,
+        title: defs[key]!.title,
+        content: buffers[key]!.toString().trim(),
+        color: defs[key]!.color,
+        icon: defs[key]!.icon,
+      ),
+  ];
 }
 
 /// Helper to parse note text into a key-value map of sections.
@@ -193,8 +272,9 @@ class _NoteReviewScreenState extends State<NoteReviewScreen> {
     setState(() {
       _loadingNote = false;
       final v = context.read<ClinicalService>().visitById(widget.visitId);
-      _loadFailed = !ok && (v?.note == null || v!.note!.content.trim().isEmpty);
-      if (v?.note != null && v!.note!.content.trim().isNotEmpty) {
+      final hasNote = v?.note != null && v!.note!.content.trim().isNotEmpty;
+      _loadFailed = !ok && !hasNote && v?.status == VisitStatus.failed;
+      if (hasNote) {
         _pollTimer?.cancel();
         _pollTimer = null;
       }
@@ -276,7 +356,9 @@ class _NoteReviewScreenState extends State<NoteReviewScreen> {
     final hasContent = note != null && note.content.trim().isNotEmpty;
 
     if (!hasContent) {
-      if (_loadFailed) return _loadFailedState();
+      if (_loadFailed || visit.status == VisitStatus.failed) {
+        return _loadFailedState();
+      }
       return _busyState(visit);
     }
 
@@ -555,7 +637,10 @@ class _NoteReviewScreenState extends State<NoteReviewScreen> {
 
           // Check for bullet or code pattern: "• I10 - Essential..." or "• 99214 - Office..."
           final cleanLine = t.replaceFirst(RegExp(r'^[•\-\*]\s*'), '');
-          final parts = cleanLine.split(RegExp(r'[:\-–]\s+'));
+          // Split code from description on ':', hyphen, en-dash or em-dash — the
+          // live server writes "M54.5 — Low back pain" with an em-dash (—), the
+          // mock uses "I10 - ..." with a hyphen.
+          final parts = cleanLine.split(RegExp(r'[:\-–—]\s+'));
           final code = parts.isNotEmpty ? parts[0].trim() : '';
           final desc = parts.length > 1 ? parts.sublist(1).join(' - ').trim() : '';
           final isIcd = RegExp(r'^[A-Z][0-9][0-9A-Z]?(\.[0-9A-Z]{1,4})?$').hasMatch(code);
@@ -826,6 +911,25 @@ class _NoteReviewScreenState extends State<NoteReviewScreen> {
 
   Widget _reviewActions(
       BuildContext context, ClinicalService svc, Visit visit) {
+    // AI-only clinicians have no scribe to send the note back to — the review is
+    // purely theirs. So the action bar is a single "Finalize & Lock" (editing is
+    // available from the note card's own Edit button). The scribe flow keeps the
+    // "Request changes" / selection-comment path.
+    final isAiOnly = context.read<AppState>().isAiOnly;
+    if (isAiOnly) {
+      return _actionBar(
+        child: SizedBox(
+          width: double.infinity,
+          child: FilledButton.icon(
+            style: FilledButton.styleFrom(backgroundColor: Nx.accent),
+            onPressed: () => _confirmApprove(context, svc, visit),
+            icon: const Icon(Icons.lock_outline, size: 18),
+            label: const Text('Finalize & Lock'),
+          ),
+        ),
+      );
+    }
+
     final hasSel = _selected.isNotEmpty;
     return _actionBar(
       child: Column(
@@ -900,14 +1004,18 @@ class _NoteReviewScreenState extends State<NoteReviewScreen> {
   }
 
   Widget _approvedFooter() {
+    final isAiOnly = context.read<AppState>().isAiOnly;
     return _actionBar(
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
-        children: const [
-          Icon(Icons.check_circle_outline, color: Nx.accent, size: 18),
-          SizedBox(width: Nx.s2),
-          Text('Note approved — ready for EHR upload by scribe',
-              style: TextStyle(
+        children: [
+          const Icon(Icons.check_circle_outline, color: Nx.accent, size: 18),
+          const SizedBox(width: Nx.s2),
+          Text(
+              isAiOnly
+                  ? 'Note finalized and locked'
+                  : 'Note approved — ready for EHR upload by scribe',
+              style: const TextStyle(
                   color: Nx.secondary,
                   fontSize: 13,
                   fontWeight: FontWeight.w600)),
@@ -1010,13 +1118,16 @@ class _NoteReviewScreenState extends State<NoteReviewScreen> {
 
   Future<void> _confirmApprove(
       BuildContext context, ClinicalService svc, Visit visit) async {
+    final isAiOnly = context.read<AppState>().isAiOnly;
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Approve as final?'),
-        content: const Text(
-            'This marks the note as the final version and hands it to the '
-            'scribe for EHR upload. You won\'t be able to edit it afterwards.'),
+        title: Text(isAiOnly ? 'Finalize & lock note?' : 'Approve as final?'),
+        content: Text(isAiOnly
+            ? 'This locks the note as the final version. You won\'t be able to '
+                'edit it afterwards.'
+            : 'This marks the note as the final version and hands it to the '
+                'scribe for EHR upload. You won\'t be able to edit it afterwards.'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
@@ -1024,7 +1135,7 @@ class _NoteReviewScreenState extends State<NoteReviewScreen> {
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: Nx.accent),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Approve'),
+            child: Text(isAiOnly ? 'Finalize & Lock' : 'Approve'),
           ),
         ],
       ),
@@ -1032,8 +1143,10 @@ class _NoteReviewScreenState extends State<NoteReviewScreen> {
     if (ok == true) {
       await svc.approve(visit.id);
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Note approved as final.')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(isAiOnly
+                ? 'Note finalized and locked.'
+                : 'Note approved as final.')));
       }
     }
   }

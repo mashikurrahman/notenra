@@ -273,8 +273,11 @@ class LiveBackend implements ApiBackend {
       final res = await _dio.get(_noteByVisit(visitId));
       final n = _objFrom(res.data, 'note');
       if (n.isEmpty) return null;
-      final content =
-          (n['final_note'] ?? n['ai_draft'] ?? n['content'] ?? '').toString();
+      // Per the backend contract, note content lives in `final_note` (the
+      // clinician/scribe-edited final) and falls back to `ai_draft` (the raw
+      // Claude draft). Those are the only two fields the server populates.
+      final content = (n['final_note'] ?? n['ai_draft'] ?? '').toString();
+      if (content.trim().isEmpty) return null;
       return ClinicalNote(
         id: (n['id'] ?? n['note_id'] ?? '').toString(),
         visitId: visitId,

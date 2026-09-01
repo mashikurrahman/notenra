@@ -15,7 +15,7 @@ import '../security.dart';
 /// these values are safe to log, to send, and to retain for the audit period.
 class ClientIdentity {
   /// Keep in step with `version:` in pubspec.yaml.
-  static const appVersion = '1.0.0';
+  static const appVersion = '1.0.4';
 
   /// Distinguishes this client from the web app in the audit trail.
   static const client = 'mobile';

@@ -32,7 +32,7 @@ class AuthApi {
   Future<LoginResult> login(String email, String password) async {
     try {
       final res = await api.dio.post('/auth/login', data: {
-        'email': email.trim(),
+        'email': email.trim().toLowerCase(),
         'password': password,
       });
       final raw = res.data;

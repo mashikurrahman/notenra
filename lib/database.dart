@@ -193,7 +193,10 @@ class AppDatabase {
   // --- Users ---
   Future<User?> getUserByUsername(String username) async {
     final db = await database;
-    final rows = await db.query('users', where: 'username = ?', whereArgs: [username], limit: 1);
+    final rows = await db.query('users',
+        where: 'LOWER(username) = LOWER(?)',
+        whereArgs: [username.trim()],
+        limit: 1);
     return rows.isEmpty ? null : User.fromMap(rows.first);
   }
 

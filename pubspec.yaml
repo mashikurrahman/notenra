@@ -14,8 +14,10 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # In iOS, build-name is used as CFBundleShortVersionString while build-number is used as CFBundleVersion.
 # Read more about iOS versioning at
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
-# Version 1.0.3+4 increments versionCode to 4 for Play Store upload.
-version: 1.0.3+4
+# The +N build number IS the Android versionCode and MUST be strictly higher
+# than any build already on the Play Console, or the upload is rejected. Bump it
+# on every store upload. 1.0.5+11 -> versionCode 11 (was +10).
+version: 1.0.5+11
 
 environment:
   sdk: ^3.12.2

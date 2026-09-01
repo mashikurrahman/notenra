@@ -10,13 +10,15 @@ import '../services/clinical_service.dart';
 import '../theme.dart';
 import '../widgets/notenra_header.dart';
 import '../widgets/nx.dart';
+import 'templates_screen.dart';
 
-/// Clinician profile: identity, role, and security posture.
+/// Clinician profile: identity, role, security posture — and note templates.
 ///
 /// Identity moves up into the brand header — the clinician's name and role sit
-/// on the gradient the way they do on Today — so the body is purely the
-/// security posture and the sign-out. Settings live in the web app; there is
-/// deliberately no Settings anywhere in this app.
+/// on the gradient the way they do on Today. The body is the security posture,
+/// the note-template manager, and the sign-out. Broader system settings still
+/// live in the web app; the only in-app setting is the clinician's own note
+/// templates (managed on [TemplatesScreen]).
 ///
 /// The server address is shown but not editable: support needs to be able to ask
 /// "which server is this device on?", while a clinician-editable server field
@@ -52,6 +54,10 @@ class ProfileScreen extends StatelessWidget {
                       isAdmin ? 'System Administrator' : 'MD / Senior Resident'),
                 ]),
                 const SizedBox(height: Nx.s3),
+                if (!isAdmin) ...[
+                  _templatesCard(context),
+                  const SizedBox(height: Nx.s3),
+                ],
                 _section('Security', Icons.shield_outlined, [
                   _row('Account role', user?.role ?? 'clinician'),
                   _row('Server', ApiConfig.displayHost),
@@ -229,6 +235,45 @@ class ProfileScreen extends StatelessWidget {
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  /// Tappable entry into the clinician's note-template manager.
+  Widget _templatesCard(BuildContext context) {
+    return NxCard(
+      onTap: () => TemplatesScreen.open(context),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: Nx.primarySoft,
+              borderRadius: BorderRadius.circular(Nx.rSm),
+            ),
+            child: const Icon(Icons.description_outlined,
+                color: Nx.primary, size: 20),
+          ),
+          const SizedBox(width: Nx.s3),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('Note templates',
+                    style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 15,
+                        color: Nx.ink)),
+                SizedBox(height: 2),
+                Text('View and edit your reusable note structures',
+                    style: TextStyle(color: Nx.muted, fontSize: 12)),
+              ],
+            ),
+          ),
+          const Icon(Icons.chevron_right, color: Nx.muted, size: 20),
         ],
       ),
     );

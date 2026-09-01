@@ -39,6 +39,11 @@ class ClinicalService extends ChangeNotifier {
   bool get isLive => _live;
   String get backendLabel => _backend.label;
 
+  /// The shared authenticated HTTP client (JWT + CSRF + session cookie), so
+  /// non-clinical features (e.g. clinician note templates) can call the API
+  /// through the same session rather than standing up a second client.
+  ApiClient get apiClient => _client;
+
   ValueListenable<bool> get online => connectivity.online;
   ValueListenable<int> get pendingSync => _sync.pending;
 
@@ -201,10 +206,17 @@ class ClinicalService extends ChangeNotifier {
     final seenBefore = _statusSeeded;
     for (final v in _visits) {
       final prev = _lastStatus[v.id];
-      if (seenBefore &&
-          v.status == VisitStatus.readyForReview &&
-          prev != VisitStatus.readyForReview) {
+      final becameReady = v.status == VisitStatus.readyForReview &&
+          prev != VisitStatus.readyForReview;
+      if (seenBefore && becameReady) {
         NotificationService.instance.noteReady();
+        // The note just became ready (e.g. the AI finished drafting for an
+        // AI-only clinician) — pull its body once now so it "syncs back" and is
+        // shown instantly on the visit banner / review screen, instead of only
+        // when the clinician opens the note. Bounded to this one transition;
+        // ensureNote no-ops if the body is already loaded. Only after the first
+        // seeded load, so a cold start with many ready notes doesn't burst-fetch.
+        if (v.note == null) unawaited(ensureNote(v.id));
       }
       _lastStatus[v.id] = v.status;
     }
